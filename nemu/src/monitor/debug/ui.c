@@ -122,7 +122,7 @@ static int cmd_info(char *args)
 
 static int cmd_x(char *args)
 {
-	char *narg= strtok(args,"");
+	char *narg= strtok(args," ");
 	if (narg == NULL){
 		printf("Input error");
 		return 0;
@@ -137,10 +137,13 @@ static int cmd_x(char *args)
 
 	int i;
 	for(i = 0; i < n; i ++){
-	if(i % 4 == 0)
-		printf("0x%88x:0x%08x",init_address,swaddr_read(init_address,4));else if((i+1)%4==0)printf("0x%08x\n",swaddr_read(init_address,4));
-	else
-		printf("0x%08x",swaddr_read(init_address,4));init_address += 4;
+		if(i % 4 == 0)
+			printf("0x%08x: 0x%08x ", init_address, swaddr_read(init_address,4));
+		else if((i+1)%4==0)
+			printf("0x%08x\n", swaddr_read(init_address,4));
+		else
+			printf("0x%08x ", swaddr_read(init_address,4));
+		init_address += 4;
 	}
 	printf("\n");
 	return 0;
