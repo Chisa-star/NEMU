@@ -40,6 +40,8 @@ static int cmd_help(char *args);
 
 static int cmd_si(char *args);
 
+static int cmd_info(char *args);
+
 static struct {
 	char *name;
 	char *description;
@@ -49,6 +51,7 @@ static struct {
 	{ "c", "Continue the execution of the program", cmd_c },
 	{ "q", "Exit NEMU", cmd_q },
 	{ "si", "Excute N instructions and then halt", cmd_si },
+	{ "info", "Display the registers status", cmd_info},
 	/* TODO: Add more commands */
 
 };
@@ -97,6 +100,21 @@ static int cmd_si(char *args){
 	cpu_exec(N);
 	
 	return 0;
+}
+
+static int cmd_info(char *args)
+{
+
+	if (args[0] == 'r')
+	{
+		int i;
+		for (i = R_EAX; i < R_EDI; i ++)
+			printf("$%s\t0x%08x\t%u\n", regsl[i], reg_l(i), reg_l(i));
+	
+		printf("$eip\tex%08x\t%u\n",cpu.eip,cpu.eip);
+	}
+	return 0;
+
 }
 
 void ui_mainloop() {
