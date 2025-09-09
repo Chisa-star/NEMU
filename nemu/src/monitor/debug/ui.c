@@ -86,7 +86,7 @@ static int cmd_help(char *args) {
 
 static int cmd_si(char *args){
 	
-	uint64_t N = 0;
+	uint32_t N = 0;
 	
 	if (args == NULL)
 		N = 1;
