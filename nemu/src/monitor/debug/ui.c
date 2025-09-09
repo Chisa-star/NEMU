@@ -42,6 +42,8 @@ static int cmd_si(char *args);
 
 static int cmd_info(char *args);
 
+static int cmd_x(char *args);
+
 static struct {
 	char *name;
 	char *description;
@@ -52,6 +54,7 @@ static struct {
 	{ "q", "Exit NEMU", cmd_q },
 	{ "si", "Excute N instructions and then halt", cmd_si },
 	{ "info", "Display the registers status", cmd_info},
+	{ "x", "Find the value of the expression ExpR and use the result as the starting memory address to output n conecutive four bytes in hexadecimal format", cmd_x},
 	/* TODO: Add more commands */
 
 };
@@ -111,10 +114,36 @@ static int cmd_info(char *args)
 		for (i = R_EAX; i < R_EDI; i ++)
 			printf("$%s\t0x%08x\t%u\n", regsl[i], reg_l(i), reg_l(i));
 	
-		printf("$eip\tex%08x\t%u\n",cpu.eip,cpu.eip);
+		printf("$eip\tex%08x\t%u\n", cpu.eip, cpu.eip);
 	}
 	return 0;
 
+}
+
+static int cmd_x(char *args)
+{
+	char *narg= strtok(args,"");
+	if (narg == NULL){
+		printf("Input error");
+		return 0;
+	}
+
+	char *expr = narg + strlen(narg) + 1;
+	int n = 0;
+	swaddr_t init_address=0;
+
+	sscanf(narg,"%d", &n);
+	sscanf(expr,"%x", &init_address);
+
+	int i;
+	for(i = 0; i < n; i ++){
+	if(i % 4 == 0)
+		printf("0x%88x:0x%08x",init_address,swaddr_read(init_address,4));else if((i+1)%4==0)printf("0x%08x\n",swaddr_read(init_address,4));
+	else
+		printf("0x%08x",swaddr_read(init_address,4));init_address += 4;
+	}
+	printf("\n");
+	return 0;
 }
 
 void ui_mainloop() {
