@@ -87,8 +87,11 @@ static int cmd_si(char *args){
 	else 
 	{
 		int f = sscanf(args, "%d", &N);
-		if (f <= 0) printf("Args error in cmd_si\n");
+		if (f <= 0)
+		{ 
+			printf("Args error in cmd_si\n");
 			return 0;
+		}
 	}
 
 	cpu_exec(N);
