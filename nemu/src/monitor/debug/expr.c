@@ -67,7 +67,6 @@ int nr_token;        // 标记数量
 /* 内存读取函数 - 使用NEMU的vaddr_read函数 */
 uint32_t vaddr_read(uint32_t addr, int len) {
     // 调用NEMU提供的内存读取函数
-    // 这个函数应该已经在nemu.h中声明了
     return vaddr_read(addr, len);
 }
 
@@ -93,15 +92,14 @@ static bool make_token(char *e) {
 
                 /* 特殊处理星号：判断是乘法还是解引用 */
                 if (rules[i].token_type == '*') {
-                    // 如果星号在开头，或者前面是运算符、左括号、逗号，则是解引用
+                    // 如果星号在开头，或者前面是运算符、左括号，则是解引用
                     if (nr_token == 0 || 
                         tokens[nr_token-1].type == '+' ||
                         tokens[nr_token-1].type == '-' ||
                         tokens[nr_token-1].type == '*' ||
                         tokens[nr_token-1].type == '/' ||
                         tokens[nr_token-1].type == EQ ||
-                        tokens[nr_token-1].type == LEFT ||
-                        tokens[nr_token-1].type == ',') {
+                        tokens[nr_token-1].type == LEFT) {
                         tokens[nr_token].type = DEREF;  // 解引用运算符
                     } else {
                         tokens[nr_token].type = '*';    // 乘法运算符
@@ -118,8 +116,7 @@ static bool make_token(char *e) {
                         tokens[nr_token-1].type == '*' ||
                         tokens[nr_token-1].type == '/' ||
                         tokens[nr_token-1].type == EQ ||
-                        tokens[nr_token-1].type == LEFT ||
-                        tokens[nr_token-1].type == ',') {
+                        tokens[nr_token-1].type == LEFT) {
                         tokens[nr_token].type = NEG;  // 一元负号
                     } else {
                         tokens[nr_token].type = '-';  // 二元减号
@@ -249,13 +246,13 @@ static uint32_t eval(int p, int q, bool *success) {
     if (p == q) {
         if (tokens[p].type == NUM) {
             // 十进制数字转换
-            return atoi(tokens[p].str);
+            return (uint32_t)atoi(tokens[p].str);
         } else if (tokens[p].type == HEX) {
             // 十六进制数字转换
-            return strtoul(tokens[p].str, NULL, 16);
+            return (uint32_t)strtoul(tokens[p].str, NULL, 16);
         } else if (tokens[p].type == REGISTER) {
             // 寄存器处理（这里需要根据具体实现来完善）
-            *success = false;  // 暂不支持寄存器
+            *success = false;
             return 0;
         } else {
             *success = false;
@@ -275,7 +272,8 @@ static uint32_t eval(int p, int q, bool *success) {
     if (tokens[p].type == NEG) {
         uint32_t val = eval(p + 1, q, success);
         if (!*success) return 0;
-        return -((int32_t)val);  // 取负值
+        // 正确处理负数：使用二进制补码表示
+        return (uint32_t)(-(int32_t)val);
     }
     
     /* 检查是否被括号包围 */
@@ -300,16 +298,20 @@ static uint32_t eval(int p, int q, bool *success) {
     
     /* 执行运算 */
     switch (tokens[op_pos].type) {
-        case '+': return left_val + right_val;
-        case '-': return left_val - right_val;
-        case '*': return left_val * right_val;  // 乘法
+        case '+': 
+            return left_val + right_val;
+        case '-': 
+            return left_val - right_val;
+        case '*': 
+            return left_val * right_val;
         case '/': 
             if (right_val == 0) {
-                *success = false;  // 除零错误
+                *success = false;
                 return 0;
             }
             return left_val / right_val;
-        case EQ: return left_val == right_val;
+        case EQ: 
+            return (uint32_t)(left_val == right_val);
         default:
             *success = false;
             return 0;
