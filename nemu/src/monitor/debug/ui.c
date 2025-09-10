@@ -44,6 +44,7 @@ static int cmd_info(char *args);
 
 static int cmd_x(char *args);
 
+static int cmd_p(char *args);
 static struct {
 	char *name;
 	char *description;
@@ -55,11 +56,31 @@ static struct {
 	{ "si", "Excute N instructions and then halt", cmd_si },
 	{ "info", "Display the registers status", cmd_info},
 	{ "x", "Find the value of the expression ExpR and use the result as the starting memory address to output n conecutive four bytes in hexadecimal format", cmd_x},
+	{"p", "Evaluate expression", cmd_p},
+    {"print", "Evaluate expression", cmd_p},
 	/* TODO: Add more commands */
 
 };
 
 #define NR_CMD (sizeof(cmd_table) / sizeof(cmd_table[0]))
+
+static int cmd_p(char *args) {
+    if (args == NULL) {
+        printf("Usage: p EXPRESSION\n");
+        return 0;
+    }
+    
+    bool success;
+    uint32_t result = expr(args, &success);
+    
+    if (success) {
+        printf("$1 = %u (0x%x)\n", result, result);
+    } else {
+        printf("Error evaluating expression: %s\n", args);
+    }
+    
+    return 0;
+}
 
 static int cmd_help(char *args) {
 	/* extract the first argument */
