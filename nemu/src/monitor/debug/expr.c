@@ -191,40 +191,40 @@ static bool check_parentheses(int p, int q) {
 /* 查找主运算符（根据运算符优先级） */
 static int find_main_operator(int p, int q) {
     int i;
-    int level = 0;          // 括号嵌套层级
-    int main_op_pos = -1;   // 主运算符位置
-    int min_priority = 999; // 最小优先级（数值越小优先级越高）
+    int level = 0;
+    int main_op_pos = -1;
+    int min_priority = 999;
+    
+    printf("DEBUG: find_main_operator(%d, %d)\n", p, q);
     
     level = 0;
     for (i = p; i <= q; i++) {
-        // 跟踪括号层级
         if (tokens[i].type == LEFT) {
             level++;
         } else if (tokens[i].type == RIGHT) {
             level--;
         }
         
-        // 只在最外层（括号层级为0）且不是一元操作符时考虑运算符
         if (level == 0 && tokens[i].type != NEG && tokens[i].type != DEREF) {
             int priority = 999;
-            // 设置运算符优先级
             switch (tokens[i].type) {
                 case '+':
                 case '-':
-                    priority = 1;  // 加减法优先级较低
+                    priority = 1;
                     break;
                 case '*':
                 case '/':
-                    priority = 2;  // 乘除法优先级较高
+                    priority = 2;
                     break;
                 case EQ:
-                    priority = 0;  // 比较运算符优先级最低
+                    priority = 0;
                     break;
                 default:
-                    continue;      // 非运算符，跳过
+                    continue;
             }
             
-            // 找到优先级最低的运算符（即最后计算的运算符）
+            printf("DEBUG: candidate operator at %d, type=%d, priority=%d\n", i, tokens[i].type, priority);
+            
             if (priority <= min_priority) {
                 min_priority = priority;
                 main_op_pos = i;
@@ -232,69 +232,98 @@ static int find_main_operator(int p, int q) {
         }
     }
     
+    printf("DEBUG: selected operator at %d\n", main_op_pos);
     return main_op_pos;
 }
 
 /* 递归求值函数 */
+/* 递归求值函数 */
 static uint32_t eval(int p, int q, bool *success) {
+    printf("DEBUG: eval(p=%d, q=%d)\n", p, q);
+    
     if (p > q) {
         *success = false;
+        printf("ERROR: p > q\n");
         return 0;
     }
     
     /* 基本情况：单个操作数 */
     if (p == q) {
+        printf("DEBUG: single token - type=%d, str=%s\n", tokens[p].type, tokens[p].str);
         if (tokens[p].type == NUM) {
-            // 十进制数字转换
-            return (uint32_t)atoi(tokens[p].str);
+            uint32_t result = (uint32_t)atoi(tokens[p].str);
+            printf("DEBUG: NUM %s -> %u\n", tokens[p].str, result);
+            return result;
         } else if (tokens[p].type == HEX) {
-            // 十六进制数字转换
-            return (uint32_t)strtoul(tokens[p].str, NULL, 16);
-        } else if (tokens[p].type == REGISTER) {
-            // 寄存器处理（这里需要根据具体实现来完善）
-            *success = false;
-            return 0;
+            uint32_t result = (uint32_t)strtoul(tokens[p].str, NULL, 16);
+            printf("DEBUG: HEX %s -> %u\n", tokens[p].str, result);
+            return result;
         } else {
             *success = false;
+            printf("ERROR: invalid single token type=%d\n", tokens[p].type);
             return 0;
         }
     }
     
     /* 处理一元操作符：解引用 */
     if (tokens[p].type == DEREF) {
+        printf("DEBUG: unary DEREF at position %d\n", p);
         uint32_t addr = eval(p + 1, q, success);
-        if (!*success) return 0;
-        // 读取内存地址的值（32位）
-        return vaddr_read(addr, 4);
+        if (!*success) {
+            printf("ERROR: DEREF evaluation failed\n");
+            return 0;
+        }
+        uint32_t result = vaddr_read(addr, 4);
+        printf("DEBUG: DEREF *%u -> %u\n", addr, result);
+        return result;
     }
     
     /* 处理一元操作符：负号 */
     if (tokens[p].type == NEG) {
+        printf("DEBUG: unary NEG at position %d\n", p);
         uint32_t val = eval(p + 1, q, success);
-        if (!*success) return 0;
-        // 正确处理负数：使用二进制补码表示
-        return (uint32_t)(-(int32_t)val);
+        if (!*success) {
+            printf("ERROR: NEG evaluation failed\n");
+            return 0;
+        }
+        uint32_t result = (uint32_t)(-(int32_t)val);
+        printf("DEBUG: NEG %u -> %u\n", val, result);
+        return result;
     }
     
     /* 检查是否被括号包围 */
     if (check_parentheses(p, q)) {
+        printf("DEBUG: parentheses from %d to %d\n", p, q);
         return eval(p + 1, q - 1, success);
     }
     
     /* 查找主运算符 */
     int op_pos = find_main_operator(p, q);
+    printf("DEBUG: main operator at position %d, type=%d\n", op_pos, op_pos != -1 ? tokens[op_pos].type : -1);
+    
     if (op_pos == -1) {
         *success = false;
+        printf("ERROR: no main operator found\n");
         return 0;
     }
     
     /* 递归计算左操作数 */
+    printf("DEBUG: evaluating left operand: %d to %d\n", p, op_pos - 1);
     uint32_t left_val = eval(p, op_pos - 1, success);
-    if (!*success) return 0;
+    if (!*success) {
+        printf("ERROR: left operand evaluation failed\n");
+        return 0;
+    }
     
     /* 递归计算右操作数 */
+    printf("DEBUG: evaluating right operand: %d to %d\n", op_pos + 1, q);
     uint32_t right_val = eval(op_pos + 1, q, success);
-    if (!*success) return 0;
+    if (!*success) {
+        printf("ERROR: right operand evaluation failed\n");
+        return 0;
+    }
+    
+    printf("DEBUG: operation %d: %u %c %u\n", tokens[op_pos].type, left_val, tokens[op_pos].type, right_val);
     
     /* 执行运算 */
     switch (tokens[op_pos].type) {
@@ -307,6 +336,7 @@ static uint32_t eval(int p, int q, bool *success) {
         case '/': 
             if (right_val == 0) {
                 *success = false;
+                printf("ERROR: division by zero\n");
                 return 0;
             }
             return left_val / right_val;
@@ -314,6 +344,7 @@ static uint32_t eval(int p, int q, bool *success) {
             return (uint32_t)(left_val == right_val);
         default:
             *success = false;
+            printf("ERROR: unknown operator type=%d\n", tokens[op_pos].type);
             return 0;
     }
 }
