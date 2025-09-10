@@ -223,10 +223,11 @@ static uint32_t eval(int p, int q, bool *success) {
 
     /* 处理一元操作符：负号 */
     if (tokens[p].type == NEG) {
-        uint32_t val = eval(p + 1, q, success);
-        if (!*success) return 0;
-        return (uint32_t)(-(int32_t)val);
-    }
+    uint32_t val = eval(p + 1, q, success);
+    if (!*success) return 0;
+    // 确保正确处理负数
+    return (uint32_t)(-(int32_t)val);
+}
 
     /* 被括号包围 */
     if (check_parentheses(p, q)) {
