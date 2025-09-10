@@ -101,27 +101,42 @@ static int eval(int p, int q, bool *success) {
     return 0;
   }
   else if (p == q) {
+    // 单个 token 必须是 NUM
     if (tokens[p].type == NUM) {
       int val;
       sscanf(tokens[p].str, "%d", &val);
       return val;
-    }
-    else {
+    } else {
       *success = false;
       return 0;
     }
   }
+  else if (tokens[p].type == '(' && tokens[q].type == ')') {
+    // 被括号包裹的子表达式
+    return eval(p + 1, q - 1, success);
+  }
 
-  // 这里只实现最简单的左右递归，支持 + - * /
+  // 查找主运算符（优先级最低）
   int op = -1;
   int min_pri = 10;
-  int i;
+  int i, level = 0;
+
   for (i = p; i <= q; i++) {
+    if (tokens[i].type == '(') {
+      level++;
+      continue;
+    }
+    if (tokens[i].type == ')') {
+      level--;
+      continue;
+    }
+    if (level > 0) continue; // 括号内跳过
+
     int pri = 10;
     if (tokens[i].type == '+' || tokens[i].type == '-') pri = 1;
     else if (tokens[i].type == '*' || tokens[i].type == '/') pri = 2;
 
-    if (pri <= min_pri && pri != 10) {
+    if (pri <= min_pri) {
       min_pri = pri;
       op = i;
     }
@@ -144,11 +159,17 @@ static int eval(int p, int q, bool *success) {
     case '+': return val1 + val2;
     case '-': return val1 - val2;
     case '*': return val1 * val2;
-    case '/': return val1 / val2;
+    case '/': 
+      if (val2 == 0) {
+        *success = false;
+        return 0;
+      }
+      return val1 / val2;
     default: assert(0);
   }
   return 0;
 }
+
 
 int expr(char *e, bool *success) {
   if (!make_token(e)) {
