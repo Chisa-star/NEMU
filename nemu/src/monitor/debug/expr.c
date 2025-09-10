@@ -2,369 +2,158 @@
 #include <sys/types.h>
 #include <regex.h>
 #include <string.h>
-#include <stdlib.h>
 #include <stdio.h>
+#include <stdlib.h>
+#include <assert.h>
 
-/* 使用POSIX正则表达式函数处理正则表达式 */
 enum {
-    NOTYPE = 256,  // 空格（无类型）
-    EQ,            // 相等运算符 "=="
-    NUM,           // 十进制数字
-    HEX,           // 十六进制数字
-    REGISTER,      // 寄存器标识符
-    LEFT,          // 左括号 "("
-    RIGHT,         // 右括号 ")"
-    NEG,           // 一元负号
-    DEREF          // 解引用运算符 *
+  NOTYPE = 256, EQ, NUM,
+  // 其他自定义 token_type 可以继续往下加
 };
 
-/* 正则表达式规则定义 */
 static struct rule {
-    char *regex;      // 正则表达式模式
-    int token_type;   // 对应的标记类型
+  char *regex;
+  int token_type;
 } rules[] = {
-    {"[0-9]+", NUM},                 // 匹配十进制数字
-    {"0x[0-9a-fA-F]+", HEX},         // 匹配十六进制数字（0x开头）
-    {"\\$[a-z]+", REGISTER},         // 匹配寄存器标识符（$开头）
-    {" +", NOTYPE},                  // 匹配空格（忽略）
-    {"\\+", '+'},                    // 匹配加号
-    {"\\*", '*'},                    // 匹配乘号（可能是乘法或解引用）
-    {"-", '-'},                      // 匹配减号（可能是二元减号或一元负号）
-    {"/", '/'},                      // 匹配除号
-    {"\\(", LEFT},                   // 匹配左括号
-    {"\\)", RIGHT},                  // 匹配右括号
-    {"==", EQ}                       // 匹配相等运算符
+  {" +",    NOTYPE},    // 空格
+  {"\\+",   '+'},       // 加号
+  {"-[0-9]+", NUM},     // 负数整体
+  {"-",     '-'},       // 减号
+  {"\\*",   '*'},       // 乘号
+  {"/",     '/'},       // 除号
+  {"[0-9]+", NUM},      // 正整数
+  // 以后你要加括号也可以: {"\\(", '('}, {"\\)", ')'},
 };
 
-#define NR_REGEX (sizeof(rules) / sizeof(rules[0]))  // 规则数量
+#define NR_REGEX (sizeof(rules) / sizeof(rules[0]))
 
-static regex_t re[NR_REGEX];  // 编译后的正则表达式
+static regex_t re[NR_REGEX];
 
-/* 初始化函数：编译所有正则表达式规则 */
 void init_regex() {
-    int i;
-    char error_msg[128];
-    int ret;
+  int i;
+  char error_msg[128];
+  int ret;
 
-    for(i = 0; i < NR_REGEX; i ++) {
-        ret = regcomp(&re[i], rules[i].regex, REG_EXTENDED);
-        if(ret != 0) {
-            regerror(ret, &re[i], error_msg, 128);
-            Assert(ret == 0, "regex compilation failed: %s\n%s", error_msg, rules[i].regex);
-        }
+  for (i = 0; i < NR_REGEX; i ++) {
+    ret = regcomp(&re[i], rules[i].regex, REG_EXTENDED);
+    if (ret != 0) {
+      regerror(ret, &re[i], error_msg, 128);
+      panic("regex compilation failed: %s\n%s", error_msg, rules[i].regex);
     }
+  }
 }
 
-/* 标记结构体 */
 typedef struct token {
-    int type;        // 标记类型
-    char str[32];    // 标记字符串内容（用于数字和标识符）
+  int type;
+  char str[32];
 } Token;
 
-Token tokens[32];    // 标记数组
-int nr_token;        // 标记数量
+static Token tokens[32];
+static int nr_token;
 
-/* 内存读取函数 - 使用NEMU的vaddr_read函数 */
-uint32_t vaddr_read(uint32_t addr, int len) {
-    // 调用NEMU提供的内存读取函数
-    return vaddr_read(addr, len);
-}
-
-/* 词法分析函数：将输入字符串转换为标记序列 */
 static bool make_token(char *e) {
-    int position = 0;
+  int position = 0;
+  regmatch_t pmatch;
+
+  nr_token = 0;
+
+  while (e[position] != '\0') {
     int i;
-    regmatch_t pmatch;
-    
-    nr_token = 0;
+    for (i = 0; i < NR_REGEX; i ++) {
+      if (regexec(&re[i], e + position, 1, &pmatch, 0) == 0 &&
+          pmatch.rm_so == 0) {
+        char *substr_start = e + position;
+        int substr_len = pmatch.rm_eo;
 
-    while(e[position] != '\0') {
-        /* 依次尝试所有规则 */
-        for(i = 0; i < NR_REGEX; i ++) {
-            if(regexec(&re[i], e + position, 1, &pmatch, 0) == 0 && pmatch.rm_so == 0) {
-                char *substr_start = e + position;
-                int substr_len = pmatch.rm_eo;
+        position += substr_len;
 
-                Log("match rules[%d] = \"%s\" at position %d with len %d: %.*s", 
-                    i, rules[i].regex, position, substr_len, substr_len, substr_start);
-                
-                position += substr_len;
-
-                /* 特殊处理星号：判断是乘法还是解引用 */
-                if (rules[i].token_type == '*') {
-                    // 如果星号在开头，或者前面是运算符、左括号，则是解引用
-                    if (nr_token == 0 || 
-                        tokens[nr_token-1].type == '+' ||
-                        tokens[nr_token-1].type == '-' ||
-                        tokens[nr_token-1].type == '*' ||
-                        tokens[nr_token-1].type == '/' ||
-                        tokens[nr_token-1].type == EQ ||
-                        tokens[nr_token-1].type == LEFT) {
-                        tokens[nr_token].type = DEREF;  // 解引用运算符
-                    } else {
-                        tokens[nr_token].type = '*';    // 乘法运算符
-                    }
-                    tokens[nr_token].str[0] = '\0';
-                    nr_token++;
-                }
-                /* 特殊处理负号：判断是一元负号还是二元减号 */
-                else if (rules[i].token_type == '-') {
-                    // 如果负号在开头，或者前面是运算符或左括号，则是一元负号
-                    if (nr_token == 0 || 
-                        tokens[nr_token-1].type == '+' ||
-                        tokens[nr_token-1].type == '-' ||
-                        tokens[nr_token-1].type == '*' ||
-                        tokens[nr_token-1].type == '/' ||
-                        tokens[nr_token-1].type == EQ ||
-                        tokens[nr_token-1].type == LEFT) {
-                        tokens[nr_token].type = NEG;  // 一元负号
-                    } else {
-                        tokens[nr_token].type = '-';  // 二元减号
-                    }
-                    tokens[nr_token].str[0] = '\0';
-                    nr_token++;
-                } 
-                /* 处理其他标记 */
-                else {
-                    switch(rules[i].token_type) {
-                        case NUM:
-                        case HEX:
-                        case REGISTER: {
-                            // 数字和标识符：保存字符串内容
-                            tokens[nr_token].type = rules[i].token_type;
-                            strncpy(tokens[nr_token].str, substr_start, substr_len);
-                            tokens[nr_token].str[substr_len] = '\0';
-                            nr_token++;
-                            break;
-                        }
-                        case NOTYPE: 
-                            // 空格：忽略不处理
-                            break;
-                        default: {
-                            // 运算符和其他标记：只记录类型
-                            tokens[nr_token].type = rules[i].token_type; 
-                            tokens[nr_token].str[0] = '\0';
-                            nr_token++;
-                            break;
-                        }
-                    }
-                }
-                break;
-            }
+        if (rules[i].token_type == NOTYPE) {
+          break; // 空格直接跳过
         }
 
-        /* 如果没有规则匹配，报错 */
-        if(i == NR_REGEX) {
-            printf("no match at position %d\n%s\n%*.s^\n", position, e, position, "");
-            return false;
-        }
-    }
-
-    return true; 
-}
-
-/* 检查括号是否匹配 */
-static bool check_parentheses(int p, int q) {
-    int i;
-    int count = 0;
-    
-    // 如果首尾不是匹配的括号，直接返回false
-    if (tokens[p].type != LEFT || tokens[q].type != RIGHT) {
-        return false;
-    }
-    
-    count = 0;
-    for (i = p; i <= q; i++) {
-        if (tokens[i].type == LEFT) {
-            count++;
-        } else if (tokens[i].type == RIGHT) {
-            count--;
-            // 如果在到达末尾前括号就匹配完了，说明不是最外层括号
-            if (count == 0 && i != q) {
-                return false;
-            }
-        }
-    }
-    return count == 0;  // 最终括号数量应该平衡
-}
-
-/* 查找主运算符（根据运算符优先级） */
-static int find_main_operator(int p, int q) {
-    int i;
-    int level = 0;
-    int main_op_pos = -1;
-    int min_priority = 999;
-    
-    printf("DEBUG: find_main_operator(%d, %d)\n", p, q);
-    
-    level = 0;
-    for (i = p; i <= q; i++) {
-        if (tokens[i].type == LEFT) {
-            level++;
-        } else if (tokens[i].type == RIGHT) {
-            level--;
-        }
-        
-        if (level == 0 && tokens[i].type != NEG && tokens[i].type != DEREF) {
-            int priority = 999;
-            switch (tokens[i].type) {
-                case '+':
-                case '-':
-                    priority = 1;
-                    break;
-                case '*':
-                case '/':
-                    priority = 2;
-                    break;
-                case EQ:
-                    priority = 0;
-                    break;
-                default:
-                    continue;
-            }
-            
-            printf("DEBUG: candidate operator at %d, type=%d, priority=%d\n", i, tokens[i].type, priority);
-            
-            if (priority <= min_priority) {
-                min_priority = priority;
-                main_op_pos = i;
-            }
-        }
-    }
-    
-    printf("DEBUG: selected operator at %d\n", main_op_pos);
-    return main_op_pos;
-}
-
-/* 递归求值函数 */
-/* 递归求值函数 */
-static uint32_t eval(int p, int q, bool *success) {
-    printf("DEBUG: eval(p=%d, q=%d)\n", p, q);
-    
-    if (p > q) {
-        *success = false;
-        printf("ERROR: p > q\n");
-        return 0;
-    }
-    
-    /* 基本情况：单个操作数 */
-    if (p == q) {
-        printf("DEBUG: single token - type=%d, str=%s\n", tokens[p].type, tokens[p].str);
-        if (tokens[p].type == NUM) {
-            uint32_t result = (uint32_t)atoi(tokens[p].str);
-            printf("DEBUG: NUM %s -> %u\n", tokens[p].str, result);
-            return result;
-        } else if (tokens[p].type == HEX) {
-            uint32_t result = (uint32_t)strtoul(tokens[p].str, NULL, 16);
-            printf("DEBUG: HEX %s -> %u\n", tokens[p].str, result);
-            return result;
+        tokens[nr_token].type = rules[i].token_type;
+        if (rules[i].token_type == NUM) {
+          if (substr_len >= sizeof(tokens[nr_token].str)) {
+            panic("number too long");
+          }
+          strncpy(tokens[nr_token].str, substr_start, substr_len);
+          tokens[nr_token].str[substr_len] = '\0';
         } else {
-            *success = false;
-            printf("ERROR: invalid single token type=%d\n", tokens[p].type);
-            return 0;
+          tokens[nr_token].str[0] = '\0';
         }
+        nr_token ++;
+        break;
+      }
     }
-    
-    /* 处理一元操作符：解引用 */
-    if (tokens[p].type == DEREF) {
-        printf("DEBUG: unary DEREF at position %d\n", p);
-        uint32_t addr = eval(p + 1, q, success);
-        if (!*success) {
-            printf("ERROR: DEREF evaluation failed\n");
-            return 0;
-        }
-        uint32_t result = vaddr_read(addr, 4);
-        printf("DEBUG: DEREF *%u -> %u\n", addr, result);
-        return result;
+
+    if (i == NR_REGEX) {
+      printf("no match at position %d\n%s\n%*.s^\n", position, e, position, "");
+      return false;
     }
-    
-    /* 处理一元操作符：负号 */
-    if (tokens[p].type == NEG) {
-        printf("DEBUG: unary NEG at position %d\n", p);
-        uint32_t val = eval(p + 1, q, success);
-        if (!*success) {
-            printf("ERROR: NEG evaluation failed\n");
-            return 0;
-        }
-        uint32_t result = (uint32_t)(-(int32_t)val);
-        printf("DEBUG: NEG %u -> %u\n", val, result);
-        return result;
-    }
-    
-    /* 检查是否被括号包围 */
-    if (check_parentheses(p, q)) {
-        printf("DEBUG: parentheses from %d to %d\n", p, q);
-        return eval(p + 1, q - 1, success);
-    }
-    
-    /* 查找主运算符 */
-    int op_pos = find_main_operator(p, q);
-    printf("DEBUG: main operator at position %d, type=%d\n", op_pos, op_pos != -1 ? tokens[op_pos].type : -1);
-    
-    if (op_pos == -1) {
-        *success = false;
-        printf("ERROR: no main operator found\n");
-        return 0;
-    }
-    
-    /* 递归计算左操作数 */
-    printf("DEBUG: evaluating left operand: %d to %d\n", p, op_pos - 1);
-    uint32_t left_val = eval(p, op_pos - 1, success);
-    if (!*success) {
-        printf("ERROR: left operand evaluation failed\n");
-        return 0;
-    }
-    
-    /* 递归计算右操作数 */
-    printf("DEBUG: evaluating right operand: %d to %d\n", op_pos + 1, q);
-    uint32_t right_val = eval(op_pos + 1, q, success);
-    if (!*success) {
-        printf("ERROR: right operand evaluation failed\n");
-        return 0;
-    }
-    
-    printf("DEBUG: operation %d: %u %c %u\n", tokens[op_pos].type, left_val, tokens[op_pos].type, right_val);
-    
-    /* 执行运算 */
-    switch (tokens[op_pos].type) {
-        case '+': 
-            return left_val + right_val;
-        case '-': 
-            return left_val - right_val;
-        case '*': 
-            return left_val * right_val;
-        case '/': 
-            if (right_val == 0) {
-                *success = false;
-                printf("ERROR: division by zero\n");
-                return 0;
-            }
-            return left_val / right_val;
-        case EQ: 
-            return (uint32_t)(left_val == right_val);
-        default:
-            *success = false;
-            printf("ERROR: unknown operator type=%d\n", tokens[op_pos].type);
-            return 0;
-    }
+  }
+
+  return true;
 }
 
-/* 主表达式求值函数 */
-uint32_t expr(char *e, bool *success) {
-    // 首先进行词法分析
-    if(!make_token(e)) {
-        *success = false;
-        return 0;
+static int eval(int p, int q, bool *success) {
+  if (p > q) {
+    *success = false;
+    return 0;
+  }
+  else if (p == q) {
+    if (tokens[p].type == NUM) {
+      int val;
+      sscanf(tokens[p].str, "%d", &val);
+      return val;
     }
-    
-    // 如果没有标记，返回0
-    if (nr_token == 0) {
-        *success = true;
-        return 0;
+    else {
+      *success = false;
+      return 0;
     }
-    
-    // 进行递归求值
-    uint32_t result = eval(0, nr_token - 1, success);
-    
-    return result;
+  }
+
+  // 这里只实现最简单的左右递归，支持 + - * /
+  int op = -1;
+  int min_pri = 10;
+  int i;
+  for (i = p; i <= q; i++) {
+    int pri = 10;
+    if (tokens[i].type == '+' || tokens[i].type == '-') pri = 1;
+    else if (tokens[i].type == '*' || tokens[i].type == '/') pri = 2;
+
+    if (pri <= min_pri && pri != 10) {
+      min_pri = pri;
+      op = i;
+    }
+  }
+
+  if (op == -1) {
+    *success = false;
+    return 0;
+  }
+
+  bool success1 = true, success2 = true;
+  int val1 = eval(p, op - 1, &success1);
+  int val2 = eval(op + 1, q, &success2);
+  if (!success1 || !success2) {
+    *success = false;
+    return 0;
+  }
+
+  switch (tokens[op].type) {
+    case '+': return val1 + val2;
+    case '-': return val1 - val2;
+    case '*': return val1 * val2;
+    case '/': return val1 / val2;
+    default: assert(0);
+  }
+  return 0;
+}
+
+int expr(char *e, bool *success) {
+  if (!make_token(e)) {
+    *success = false;
+    return 0;
+  }
+  return eval(0, nr_token - 1, success);
 }
