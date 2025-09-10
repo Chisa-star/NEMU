@@ -1,35 +1,33 @@
 #include "nemu.h"
-
-/* We use the POSIX regex functions to process regular expressions.
- * Type 'man regex' for more information about POSIX regex functions.
- */
 #include <sys/types.h>
 #include <regex.h>
-#include <stdlib.h>   /* for atoi */
+#include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
 
 enum {
-    NOTYPE = 256, EQ, NUM, LEFT, RIGHT, NEG, DEREF, HEX
+    NOTYPE = 256, EQ, NUM, LEFT, RIGHT, DEREF, HEX
 };
 
 static struct rule {
     char *regex;
     int token_type;
 } rules[] = {
-    {"[0-9]+", NUM},          /* 十进制数字 */
-    {"0x[0-9a-fA-F]+", HEX},  /* 十六进制数字 */
+    {"-[0-9]+", NUM},         /* 负十进制数字 */
+    {"-0x[0-9a-fA-F]+", HEX}, /* 负十六进制数字 */
+    {"[0-9]+", NUM},          /* 正十进制数字 */
+    {"0x[0-9a-fA-F]+", HEX},  /* 正十六进制数字 */
     {" +",    NOTYPE},        /* spaces */
     {"\\+",   '+'},           /* plus */
     {"\\*",   '*'},           /* star (可能是乘法或解引用) */
-    {"-",     '-'},           /* minus (可能是减法或负号) */
+    {"-",     '-'},           /* minus (只能是二元减法) */
     {"/",     '/'},           /* divide */
     {"\\(",   LEFT},          /* left paren */
     {"\\)",   RIGHT},         /* right paren */
     {"==",    EQ}             /* equal */
 };
 
-#define NR_REGEX (sizeof(rules) / sizeof(rules[0]) )
+#define NR_REGEX (sizeof(rules) / sizeof(rules[0]))
 
 static regex_t re[NR_REGEX];
 
@@ -74,7 +72,6 @@ static bool make_token(char *e) {
 
                 /* 特殊处理星号：判断是乘法还是解引用 */
                 if (rules[i].token_type == '*') {
-                    // 如果星号在开头，或者前面是运算符或左括号，则是解引用
                     if (nr_token == 0 || 
                         tokens[nr_token-1].type == '+' ||
                         tokens[nr_token-1].type == '-' ||
@@ -82,26 +79,9 @@ static bool make_token(char *e) {
                         tokens[nr_token-1].type == '/' ||
                         tokens[nr_token-1].type == EQ ||
                         tokens[nr_token-1].type == LEFT) {
-                        tokens[nr_token].type = DEREF;  // 解引用运算符
+                        tokens[nr_token].type = DEREF;
                     } else {
-                        tokens[nr_token].type = '*';    // 乘法运算符
-                    }
-                    tokens[nr_token].str[0] = '\0';
-                    nr_token ++;
-                }
-                /* 特殊处理负号：判断是一元负号还是二元减号 */
-                else if (rules[i].token_type == '-') {
-                    // 如果负号在开头，或者前面是运算符或左括号，则是一元负号
-                    if (nr_token == 0 || 
-                        tokens[nr_token-1].type == '+' ||
-                        tokens[nr_token-1].type == '-' ||
-                        tokens[nr_token-1].type == '*' ||
-                        tokens[nr_token-1].type == '/' ||
-                        tokens[nr_token-1].type == EQ ||
-                        tokens[nr_token-1].type == LEFT) {
-                        tokens[nr_token].type = NEG;  // 一元负号
-                    } else {
-                        tokens[nr_token].type = '-';  // 二元减号
+                        tokens[nr_token].type = '*';
                     }
                     tokens[nr_token].str[0] = '\0';
                     nr_token ++;
@@ -142,10 +122,8 @@ static bool make_token(char *e) {
     return true; 
 }
 
-/* 内存读取函数 */
 uint32_t vaddr_read(uint32_t addr, int len);
 
-/* 检查 tokens[p..q] 是否完整被最外层括号包围 */
 static bool check_parentheses(int p, int q) {
     if (p > q) return false;
     if (tokens[p].type != LEFT || tokens[q].type != RIGHT) return false;
@@ -161,7 +139,6 @@ static bool check_parentheses(int p, int q) {
     return count == 0;
 }
 
-/* 查找主运算符（最低优先级），相同优先级选靠右的运算符以保持左结合 */
 static int find_main_operator(int p, int q) {
     int i;
     int level = 0;
@@ -173,10 +150,6 @@ static int find_main_operator(int p, int q) {
         if (tokens[i].type == RIGHT) { level--; continue; }
         if (level != 0) continue;
 
-        /* 跳过一元操作符 */
-        if (tokens[i].type == NEG || tokens[i].type == DEREF) continue;
-
-        /* 只对真正的二元运算符计算优先级，跳过其它 token */
         if (tokens[i].type == EQ) {
             if (0 <= min_priority) { min_priority = 0; main_op_pos = i; }
         } else if (tokens[i].type == '+' || tokens[i].type == '-') {
@@ -184,14 +157,12 @@ static int find_main_operator(int p, int q) {
         } else if (tokens[i].type == '*' || tokens[i].type == '/') {
             if (2 <= min_priority) { min_priority = 2; main_op_pos = i; }
         } else {
-            /* not an operator we care about */
             continue;
         }
     }
     return main_op_pos;
 }
 
-/* 递归求值 */
 static uint32_t eval(int p, int q, bool *success) {
     if (p > q) {
         *success = false;
@@ -205,30 +176,29 @@ static uint32_t eval(int p, int q, bool *success) {
             *success = true;
             return (uint32_t)val;
         } else if (tokens[p].type == HEX) {
-            uint32_t val = (uint32_t)strtoul(tokens[p].str, NULL, 16);
+            char *str = tokens[p].str;
+            int is_negative = 0;
+            
+            if (str[0] == '-') {
+                is_negative = 1;
+                str++;
+            }
+            
+            uint32_t val = (uint32_t)strtoul(str, NULL, 16);
             *success = true;
-            return val;
+            return is_negative ? -val : val;
         } else {
             *success = false;
             return 0;
         }
     }
 
-    /* 处理一元操作符：解引用 */
+    /* 处理解引用 */
     if (tokens[p].type == DEREF) {
         uint32_t addr = eval(p + 1, q, success);
         if (!*success) return 0;
         return swaddr_read(addr, 4);
     }
-
-    /* 处理一元操作符：负号 */
-    /* 处理一元操作符：负号 */
-	if (tokens[p].type == NEG) {
-    	uint32_t val = eval(p + 1, q, success);
-    	if (!*success) 
-			return 0;
-		return -val;  // C语言会自动进行补码运算
-}
 
     /* 被括号包围 */
     if (check_parentheses(p, q)) {
@@ -262,7 +232,6 @@ static uint32_t eval(int p, int q, bool *success) {
     }
 }
 
-/* expr 接口 */
 uint32_t expr(char *e, bool *success) {
     if (!make_token(e)) {
         *success = false;
