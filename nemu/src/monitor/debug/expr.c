@@ -200,16 +200,13 @@ static uint32_t eval(int p, int q, bool *success) {
 
 /* expr 接口 */
 uint32_t expr(char *e, bool *success) {
-    if (!make_token(e)) {
-        *success = false;
-        return 0;
-    }
-    if (nr_token == 0) {
-        *success = true;
-        return 0;
-    }
-    uint32_t val = eval(0, nr_token - 1, success);
-    printf(">>> expr result = %u, success = %d\n", val, *success ? 1 : 0);
-    return val;
+	if (!make_token(e)) {
+		*success = false;
+		return 0;
+	}
+	if (nr_token == 0) {
+		*success = true;
+		return 0;
+	}
+	return eval(0, nr_token - 1, success);
 }
-
