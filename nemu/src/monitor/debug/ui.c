@@ -166,7 +166,7 @@ static int cmd_p(char *args) {
     uint32_t result = expr(args, &success);
     
     if (success) {
-        printf("%u (0x%x)\n", result, result);
+        printf("%u(0x%x)\n", result, result);
     } else {
         printf("Error evaluating expression: %s\n", args);
     }
