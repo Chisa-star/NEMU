@@ -222,14 +222,14 @@ static uint32_t eval(int p, int q, bool *success) {
     }
 
     if (tokens[p].type == DEREF) {
-        uint32_t addr = eval(p + 1, q, success);
+        uint32_t addr = eval(p + 1, p + 1, success);
         if (!*success) return 0;
-        return swaddr_read(addr, 4);
+        return swaddr_read(addr, 4) + eval(p + 2, q, success);
     }
     if (tokens[p].type == NOT) {
-        uint32_t val = eval(p + 1, q, success);
+        uint32_t val = eval(p + 1, p + 1, success);
         if (!*success) return 0;
-        return !val;
+        return !val + eval(p + 2, q, success);
     }
 
     if (check_parentheses(p, q)) {
