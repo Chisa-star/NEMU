@@ -241,13 +241,13 @@ static uint32_t eval(int p, int q, bool *success) {
     
     int op_pos = find_main_operator(p, q);
 
-    bool s1 = false, s2 = false;
-    uint32_t left = eval(p, op_pos - 1, &s1);
-    if (!s1) { *success = false; return 0; }
-    uint32_t right = eval(op_pos + 1, q, &s2);
-    if (!s2) { *success = false; return 0; }
     if (op_pos != -1)
     {
+        bool s1 = false, s2 = false;
+        uint32_t left = eval(p, op_pos - 1, &s1);
+        if (!s1) { *success = false; return 0; }
+        uint32_t right = eval(op_pos + 1, q, &s2);
+        if (!s2) { *success = false; return 0; }
         switch (tokens[op_pos].type) {
         case '+': *success = true; return left + right;
         case '-': *success = true; return left - right;
