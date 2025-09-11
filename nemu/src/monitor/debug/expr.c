@@ -135,7 +135,7 @@ static bool make_token(char *e) {
     return true; 
 }
 
-uint32_t vaddr_read(uint32_t addr, int len);
+uint32_t swaddr_read(uint32_t addr, int len);
 
 static bool check_parentheses(int p, int q) {
     if (p > q) return false;
@@ -210,8 +210,8 @@ static uint32_t eval(int p, int q, bool *success) {
         } else if (tokens[p].type == HEX) {
             char *str = tokens[p].str;
             int is_negative = 0;
-            if (str[0] == '-') { is_negative = 1; str++; }
-            uint32_t val = (uint32_t)strtoul(str, NULL, 16);
+            if (str[0] == '-') { is_negative = 1; str ++; }
+            uint32_t val = (uint32_t)strtoul(str, NULL, 16);                
             *success = true;
             return is_negative ? -val : val;
         } else if (tokens[p].type == REG) {
