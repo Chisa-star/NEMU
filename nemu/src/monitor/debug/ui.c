@@ -109,20 +109,23 @@ static int cmd_si(char *args){
 	return 0;
 }
 
-static int cmd_info(char *args)
-{
+static int cmd_info(char *args) {
+    if (args == NULL) {
+        printf("Usage: info r\n");
+        return 0;
+    }
 
-	if (args[0] == 'r')
-	{
-		int i;
-		for (i = R_EAX; i < R_EDI; i ++)
-			printf("$%s\t0x%08x\t%u\n", regsl[i], reg_l(i), reg_l(i));
-	
-		printf("$eip\tex%08x\t%u\n", cpu.eip, cpu.eip);
-	}
-	return 0;
+    if (args[0] == 'r') {
+        int i;
+        for (i = R_EAX; i <= R_EDI; i++) {
+            printf("$%s\t0x%08x\t%u\n", regsl[i], reg_l(i), reg_l(i));
+        }
+        printf("$eip\t0x%08x\t%u\n", cpu.eip, cpu.eip);
+    }
 
+    return 0;
 }
+
 
 static int cmd_x(char *args)
 {
