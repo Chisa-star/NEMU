@@ -135,8 +135,6 @@ static bool make_token(char *e) {
     return true; 
 }
 
-uint32_t vaddr_read(uint32_t addr, int len);
-
 static bool check_parentheses(int p, int q) {
     if (p > q) return false;
     if (tokens[p].type != LEFT || tokens[q].type != RIGHT) return false;
