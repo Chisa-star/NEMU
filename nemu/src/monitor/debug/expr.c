@@ -194,15 +194,16 @@ uint32_t isa_reg_str2val(const char *s, bool *success) {
     return 0;
 }
 
-int fin_kuohao(int p, int q)
+int find_kuohao(int st, int en)
 {
-    int count = 0, i = 0;
-    for (i = p; i <= q; i++) {
-        if (tokens[i].type == '(') count++;
-        else if (tokens[i].type == ')') count--;
-        if (count == 0) return i; // 找到匹配的右括号
+    int i, count = 0;
+    for (i = st; i <= en; i ++)
+    {
+        if (tokens[i].type == LEFT) count ++;
+        else if (tokens[i].type == RIGHT) count --;
+        if (count == 0) return i; 
     }
-    return -1; // 没有匹配的右括号
+    return -1;
 }
 
 
@@ -237,23 +238,34 @@ static uint32_t eval(int p, int q, bool *success) {
         return eval(p + 1, q - 1, success);
     }
 
-    if (tokens[p].type == DEREF || tokens[p].type == NOT) {
+
+    if (tokens[p].type == DEREF || tokens[p].type == NOT)
+    {
         int end = p + 1;
         if (tokens[end].type == LEFT)
-            end = fin_kuohao(end, q);
-        uint32_t val = eval(p + 1, end, success);
+            end = find_kuohao(end, q);
+        uint32_t addr = eval(p + 1, end, success);
         if (!*success) return 0;
-        return (tokens[p].type == DEREF) ? swaddr_read(val, 4) : !val;
+        if (tokens[p].type == DEREF)
+        {
+            return swaddr_read(addr, 4); 
+        }
+        else 
+            return !addr;
     }
-
-    // 找主运算符
+    
     int op_pos = find_main_operator(p, q);
-    if (op_pos == -1) { *success = false; return 0; }
+    if (op_pos == -1) {
+        *success = false;
+        return 0;
+    }
 
     bool s1 = false, s2 = false;
     uint32_t left = eval(p, op_pos - 1, &s1);
+    if (!s1) { *success = false; return 0; }
     uint32_t right = eval(op_pos + 1, q, &s2);
-    if (!s1 || !s2) { *success = false; return 0; }
+    if (!s2) { *success = false; return 0; }
+
 
 
     switch (tokens[op_pos].type) {
