@@ -14,4 +14,5 @@ typedef struct watchpoint {
 void setwp(char *, bool *);
 void print_wp();
 void do_int3();
+bool check_watchpoints();
 #endif
