@@ -57,7 +57,7 @@ void setwp(char *s, bool *suc)
 	WP *wp = new_wp();
 	strcpy(wp -> expr, s);
 	wp->val = expr(s, suc);
-	printf("Watchpoint %d set on %s, initial value = %u\n", wp->NO, s, wp -> val);
+	//printf("Watchpoint %d set on %s, initial value = %u\n", wp->NO, s, wp -> val);
 }
 
 void print_wp() {
