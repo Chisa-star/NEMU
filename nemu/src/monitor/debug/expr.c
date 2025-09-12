@@ -72,8 +72,8 @@ static bool make_token(char *e) {
                 char *substr_start = e + position;
                 int substr_len = (int)(pmatch.rm_eo - pmatch.rm_so);
 
-                Log("match rules[%d] = \"%s\" at position %d with len %d: %.*s", 
-                    i, rules[i].regex, position, substr_len, substr_len, substr_start);
+                //Log("match rules[%d] = \"%s\" at position %d with len %d: %.*s", 
+                    //i, rules[i].regex, position, substr_len, substr_len, substr_start);
                 position += substr_len;
 
                 if (rules[i].token_type == '*') {
