@@ -2,6 +2,7 @@
 #include "monitor/expr.h"
 #include <stdlib.h>
 #include "monitor/monitor.h"
+#include "cpu/reg.h"
 #define NR_WP 32
 
 static WP wp_pool[NR_WP];
@@ -56,7 +57,7 @@ void setwp(char *s, bool *suc)
 	WP *wp = new_wp();
 	strcpy(wp -> expr, s);
 	wp->val = expr(s, suc);
-	printf("Watchpoint %d set on %s, initial value = %u\n", wp->NO, s, wp -> val);
+	//printf("Watchpoint %d set on %s, initial value = %u\n", wp->NO, s, wp -> val);
 }
 
 void print_wp() {
@@ -67,24 +68,21 @@ void print_wp() {
     }
 }
 
-bool check_watchpoints() {
+bool check_watchpoints(swaddr_t eip_at_exec) {
     bool stop = false;
-	WP *p = head;
+    WP *p = head;
     for (; p != NULL; p = p->next) {
         bool success = true;
         uint32_t new_val = expr(p->expr, &success);
         if (!success) continue;
 
         if (new_val != p->val) {
-            printf("\nHit watchpoint %d: %s\n", p->NO, p->expr);
-            printf("Old value = %u (0x%x)\n", p->val, p->val);
-            printf("New value = %u (0x%x)\n", new_val, new_val);
-
-            p-> val = new_val;  // 更新监视点记录的值
+            printf("\nHit watchpoint %d at address 0x%08x\n", p->NO, eip_at_exec);
+            p->val = new_val;  // 更新监视点记录的值
             nemu_state = STOP;
             stop = true;
         }
     }
-
     return stop;
 }
+
