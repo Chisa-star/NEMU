@@ -60,11 +60,8 @@ void cpu_exec(volatile uint32_t n) {
 
 		/* Execute one instruction, including instruction fetch,
 		 * instruction decode, and the actual execution. */
-		
-		swaddr_t cur_eip = cpu.eip;
-		check_watchpoints(cur_eip); 
-		if (nemu_state == STOP) return;
 		int instr_len = exec(cpu.eip);
+
 		cpu.eip += instr_len;
 
 #ifdef DEBUG
@@ -77,6 +74,8 @@ void cpu_exec(volatile uint32_t n) {
 #endif
 
 		/* TODO: check watchpoints here. */
+		check_watchpoints(); 
+		if (nemu_state == STOP) return;
 
 #ifdef HAS_DEVICE
 		extern void device_update();
