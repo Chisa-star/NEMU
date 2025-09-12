@@ -46,6 +46,8 @@ static int cmd_x(char *args);
 
 static int cmd_p(char *args);
 
+static int cmd_w(char *args);
+
 static struct {
 	char *name;
 	char *description;
@@ -57,7 +59,8 @@ static struct {
 	{ "si", "Excute N instructions and then halt", cmd_si },
 	{ "info", "Display the registers status", cmd_info},
 	{ "x", "Find the value of the expression ExpR and use the result as the starting memory address to output n conecutive four bytes in hexadecimal format", cmd_x},
-	{"p", "Evaluate expression", cmd_p},
+	{ "p", "Evaluate expression", cmd_p},
+	{ "w", "Print information of the WP", cmd_w},
 	/* TODO: Add more commands */
 
 };
@@ -123,9 +126,19 @@ static int cmd_info(char *args) {
         printf("$eip\t0x%08x\t%u\n", cpu.eip, cpu.eip);
     }
 
+	else if(args[0] == 'w'){
+		print_wp();
+	}
+
     return 0;
 }
 
+static int cmd_w(char *args)
+{
+	bool suc = true;
+	setwp(args, &suc);
+	return 0;
+}
 
 static int cmd_x(char *args)
 {
