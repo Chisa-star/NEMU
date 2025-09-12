@@ -68,21 +68,22 @@ void print_wp() {
     }
 }
 
-bool check_watchpoints(swaddr_t eip_at_exec) {
+bool check_watchpoints() {
     bool stop = false;
-    WP *p = head;
+	WP *p = head;
     for (; p != NULL; p = p->next) {
         bool success = true;
         uint32_t new_val = expr(p->expr, &success);
         if (!success) continue;
 
         if (new_val != p->val) {
-            printf("\nHit watchpoint %d at address 0x%08x\n", p->NO, eip_at_exec);
-            p->val = new_val;  // 更新监视点记录的值
+            printf("\nHit watchpoint %d at address 0x%08x\n", p->NO, cpu.eip);
+
+            p-> val = new_val;  // 更新监视点记录的值
             nemu_state = STOP;
             stop = true;
         }
     }
+
     return stop;
 }
-
