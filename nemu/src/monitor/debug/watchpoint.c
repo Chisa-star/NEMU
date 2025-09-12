@@ -1,6 +1,7 @@
 #include "monitor/watchpoint.h"
 #include "monitor/expr.h"
 #include <stdlib.h>
+#include "monitor/monitor.h"
 #define NR_WP 32
 
 static WP wp_pool[NR_WP];
@@ -80,7 +81,7 @@ bool check_watchpoints() {
             printf("New value = %u (0x%x)\n", new_val, new_val);
 
             p-> val = new_val;  // 更新监视点记录的值
-            do_int3();
+            nemu_state = STOP;
             stop = true;
         }
     }
