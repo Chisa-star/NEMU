@@ -14,9 +14,7 @@ static struct rule {
     char *regex;
     int token_type;
 } rules[] = {
-    {"-0x[0-9a-fA-F]+", HEX},     /* 负十六进制数字 */
     {"0x[0-9a-fA-F]+", HEX},      /* 正十六进制数字 */
-    {"-[0-9]+", NUM},             /* 负十进制数字 */
     {"[0-9]+", NUM},              /* 正十进制数字 */
     {" +",    NOTYPE},            /* spaces */
     {"==",    EQ},                /* equal */
