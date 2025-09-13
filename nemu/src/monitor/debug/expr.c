@@ -7,7 +7,7 @@
 
 enum {
     NOTYPE = 256, EQ, NUM, LEFT, RIGHT, DEREF, HEX,
-    NEQ, AND, OR, NOT, REG, NEG
+    NEQ, AND, OR, NOT, REG
 };
 
 static struct rule {
@@ -25,7 +25,7 @@ static struct rule {
     {"\\|\\|", OR},               /* logical or */
     {"\\+",   '+'},               /* plus */
     {"\\*",   '*'},               /* star (可能是乘法或解引用) */
-    {"-",     '-'},               /* minus (可能是一元或二元) */
+    {"-",     '-'},               /* minus */
     {"/",     '/'},               /* divide */
     {"!",     NOT},               /* logical not */
     {"\\(",   LEFT},              /* left paren */
@@ -56,7 +56,7 @@ typedef struct token {
     char str[32];
 } Token;
 
-Token tokens[64];
+Token tokens[32];
 int nr_token;
 
 static bool make_token(char *e) {
@@ -74,7 +74,6 @@ static bool make_token(char *e) {
 
                 position += substr_len;
 
-                /* 处理 * 的一元/二元情形（解引用或乘法） */
                 if (rules[i].token_type == '*') {
                     if (nr_token == 0 || 
                         tokens[nr_token-1].type == '+' ||
@@ -89,26 +88,6 @@ static bool make_token(char *e) {
                         tokens[nr_token].type = DEREF;
                     } else {
                         tokens[nr_token].type = '*';
-                    }
-                    tokens[nr_token].str[0] = '\0';
-                    nr_token ++;
-                }
-                /* 处理 - 的一元/二元情形（NEG 或 -） */
-                else if (rules[i].token_type == '-') {
-                    if (nr_token == 0 ||
-                        tokens[nr_token-1].type == '+' ||
-                        tokens[nr_token-1].type == '-' ||
-                        tokens[nr_token-1].type == '*' ||
-                        tokens[nr_token-1].type == '/' ||
-                        tokens[nr_token-1].type == EQ ||
-                        tokens[nr_token-1].type == NEQ ||
-                        tokens[nr_token-1].type == AND ||
-                        tokens[nr_token-1].type == OR ||
-                        tokens[nr_token-1].type == LEFT) {
-                        /* 在这些语境下，- 被视为一元减号 */
-                        tokens[nr_token].type = NEG;
-                    } else {
-                        tokens[nr_token].type = '-';
                     }
                     tokens[nr_token].str[0] = '\0';
                     nr_token ++;
@@ -155,11 +134,11 @@ static bool make_token(char *e) {
 }
 
 static bool check_parentheses(int p, int q) {
+    int count = 0;
+    int i;
     if (p > q) return false;
     if (tokens[p].type != LEFT || tokens[q].type != RIGHT) return false;
 
-    int count = 0;
-    int i;
     for (i = p; i <= q; i++) {
         if (tokens[i].type == LEFT) count++;
         else if (tokens[i].type == RIGHT) count--;
@@ -180,19 +159,21 @@ static int find_main_operator(int p, int q) {
         if (tokens[i].type == RIGHT) { level--; continue; }
         if (level != 0) continue;
 
-        int pri = 999;
-        switch (tokens[i].type) {
-            case OR:  pri = -2; break;
-            case AND: pri = -1; break;
-            case EQ: case NEQ: pri = 0; break;
-            case '+': case '-': pri = 1; break;
-            case '*': case '/': pri = 2; break;
-            default: continue;
-        }
+        {
+            int pri = 999;
+            switch (tokens[i].type) {
+                case OR:  pri = -2; break;
+                case AND: pri = -1; break;
+                case EQ: case NEQ: pri = 0; break;
+                case '+': case '-': pri = 1; break;
+                case '*': case '/': pri = 2; break;
+                default: break;
+            }
 
-        if (pri <= min_priority) {
-            min_priority = pri;
-            main_op_pos = i;
+            if (pri <= min_priority) {
+                min_priority = pri;
+                main_op_pos = i;
+            }
         }
     }
     return main_op_pos;
@@ -225,14 +206,12 @@ int find_kuohao(int st, int en)
     return -1;
 }
 
-
 static uint32_t eval(int p, int q, bool *success) {
     if (p > q) {
         *success = false;
         return 0;
     }
 
-    // 只有一个 token，直接返回值
     if (p == q) {
         if (tokens[p].type == NUM) {
             int val = atoi(tokens[p].str);
@@ -241,10 +220,12 @@ static uint32_t eval(int p, int q, bool *success) {
         } else if (tokens[p].type == HEX) {
             char *str = tokens[p].str;
             int is_negative = 0;
-            if (str[0] == '-') { is_negative = 1; str++; }
-            uint32_t val = (uint32_t)strtoul(str, NULL, 16);
-            *success = true;
-            return is_negative ? -val : val;
+            if (str[0] == '-') { is_negative = 1; str ++; }
+            {
+                uint32_t val = (uint32_t)strtoul(str, NULL, 16);                
+                *success = true;
+                return is_negative ? -val : val;
+            }
         } else if (tokens[p].type == REG) {
             uint32_t val = isa_reg_str2val(tokens[p].str + 1, success);
             return val;
@@ -254,58 +235,56 @@ static uint32_t eval(int p, int q, bool *success) {
         }
     }
 
-    // 如果一对括号包裹整个表达式
     if (check_parentheses(p, q)) {
         return eval(p + 1, q - 1, success);
     }
 
-    // 找主运算符
-    int op_pos = find_main_operator(p, q);
-
-    if (op_pos != -1) {
-        bool s1 = false, s2 = false;
-        uint32_t left = eval(p, op_pos - 1, &s1);
-        if (!s1) { *success = false; return 0; }
-        uint32_t right = eval(op_pos + 1, q, &s2);
-        if (!s2) { *success = false; return 0; }
-
-        switch (tokens[op_pos].type) {
-            case '+': *success = true; return left + right;
-            case '-': *success = true; return left - right;
-            case '*': *success = true; return left * right;
-            case '/':
-                if (right == 0) { *success = false; return 0; }
-                *success = true; return left / right;
-            case EQ:  *success = true; return (uint32_t)(left == right);
-            case NEQ: *success = true; return (uint32_t)(left != right);
-            case AND: *success = true; return (uint32_t)(left && right);
-            case OR:  *success = true; return (uint32_t)(left || right);
-        }
-    } 
-    else {
-        // 处理一元运算符
-        if (tokens[p].type == DEREF || tokens[p].type == NOT) {
-            int end = p + 1;
-            if (tokens[end].type == LEFT)
-                end = find_kuohao(end, q);
-            uint32_t addr = eval(p + 1, end, success);
-            if (!*success) return 0;
-            if (tokens[p].type == DEREF) {
-                return swaddr_read(addr, 4);
-            } else {
-                return !addr;
+    {
+        int op_pos = find_main_operator(p, q);
+        if (op_pos != -1)
+        {
+            bool s1 = false, s2 = false;
+            uint32_t left = eval(p, op_pos - 1, &s1);
+            if (!s1) { *success = false; return 0; }
+            uint32_t right = eval(op_pos + 1, q, &s2);
+            if (!s2) { *success = false; return 0; }
+            switch (tokens[op_pos].type) {
+                case '+': *success = true; return left + right;
+                case '-': *success = true; return left - right;
+                case '*': *success = true; return left * right;
+                case '/':
+                    if (right == 0) { *success = false; return 0; }
+                    *success = true; return left / right;
+                case EQ:  *success = true; return (uint32_t)(left == right);
+                case NEQ: *success = true; return (uint32_t)(left != right);
+                case AND: *success = true; return (uint32_t)(left && right);
+                case OR:  *success = true; return (uint32_t)(left || right);
             }
         }
-        // 🔧 新增兜底逻辑：如果是括号包裹但 check_parentheses 没识别成功
-        else if (tokens[p].type == LEFT && tokens[q].type == RIGHT) {
-            return eval(p + 1, q - 1, success);
+        else
+        {
+            if (tokens[p].type == DEREF || tokens[p].type == NOT)
+            {
+                int end = p + 1;
+                if (tokens[end].type == LEFT)
+                    end = find_kuohao(end, q);
+                {
+                    uint32_t addr = eval(p + 1, end, success);
+                    if (!*success) return 0;
+                    if (tokens[p].type == DEREF)
+                    {
+                        return swaddr_read(addr, 4); 
+                    }
+                    else 
+                        return !addr;
+                }
+            }
         }
     }
 
     *success = false;
     return 0;
 }
-
 
 uint32_t expr(char *e, bool *success) {
     if (!make_token(e)) {
