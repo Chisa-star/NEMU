@@ -7,7 +7,7 @@
 
 enum {
     NOTYPE = 256, EQ, NUM, LEFT, RIGHT, DEREF, HEX,
-    NEQ, AND, OR, NOT, REG
+    NEQ, AND, OR, NOT, REG, NEG
 };
 
 static struct rule {
@@ -25,7 +25,7 @@ static struct rule {
     {"\\|\\|", OR},               /* logical or */
     {"\\+",   '+'},               /* plus */
     {"\\*",   '*'},               /* star (可能是乘法或解引用) */
-    {"-",     '-'},               /* minus */
+    {"-",     '-'},               /* minus (可能是一元或二元) */
     {"/",     '/'},               /* divide */
     {"!",     NOT},               /* logical not */
     {"\\(",   LEFT},              /* left paren */
@@ -56,7 +56,7 @@ typedef struct token {
     char str[32];
 } Token;
 
-Token tokens[32];
+Token tokens[64];
 int nr_token;
 
 static bool make_token(char *e) {
@@ -72,10 +72,9 @@ static bool make_token(char *e) {
                 char *substr_start = e + position;
                 int substr_len = (int)(pmatch.rm_eo - pmatch.rm_so);
 
-                //Log("match rules[%d] = \"%s\" at position %d with len %d: %.*s", 
-                    //i, rules[i].regex, position, substr_len, substr_len, substr_start);
                 position += substr_len;
 
+                /* 处理 * 的一元/二元情形（解引用或乘法） */
                 if (rules[i].token_type == '*') {
                     if (nr_token == 0 || 
                         tokens[nr_token-1].type == '+' ||
@@ -90,6 +89,26 @@ static bool make_token(char *e) {
                         tokens[nr_token].type = DEREF;
                     } else {
                         tokens[nr_token].type = '*';
+                    }
+                    tokens[nr_token].str[0] = '\0';
+                    nr_token ++;
+                }
+                /* 处理 - 的一元/二元情形（NEG 或 -） */
+                else if (rules[i].token_type == '-') {
+                    if (nr_token == 0 ||
+                        tokens[nr_token-1].type == '+' ||
+                        tokens[nr_token-1].type == '-' ||
+                        tokens[nr_token-1].type == '*' ||
+                        tokens[nr_token-1].type == '/' ||
+                        tokens[nr_token-1].type == EQ ||
+                        tokens[nr_token-1].type == NEQ ||
+                        tokens[nr_token-1].type == AND ||
+                        tokens[nr_token-1].type == OR ||
+                        tokens[nr_token-1].type == LEFT) {
+                        /* 在这些语境下，- 被视为一元减号 */
+                        tokens[nr_token].type = NEG;
+                    } else {
+                        tokens[nr_token].type = '-';
                     }
                     tokens[nr_token].str[0] = '\0';
                     nr_token ++;
@@ -238,7 +257,6 @@ static uint32_t eval(int p, int q, bool *success) {
         return eval(p + 1, q - 1, success);
     }
 
-    
     int op_pos = find_main_operator(p, q);
 
     if (op_pos != -1)
@@ -263,19 +281,27 @@ static uint32_t eval(int p, int q, bool *success) {
     }
     else
     {
-        if (tokens[p].type == DEREF || tokens[p].type == NOT)
+        /* 统一处理一元运算符：DEREF, NOT, NEG */
+        if (tokens[p].type == DEREF || tokens[p].type == NOT || tokens[p].type == NEG)
         {
-            int end = p + 1;
-            if (tokens[end].type == LEFT)
-                end = find_kuohao(end, q);
-            uint32_t addr = eval(p + 1, end, success);
-            if (!*success) return 0;
+            bool sright = false;
+            uint32_t right = eval(p + 1, q, &sright);
+            if (!sright) { *success = false; return 0; }
             if (tokens[p].type == DEREF)
             {
-                return swaddr_read(addr, 4); 
+                *success = true;
+                return swaddr_read(right, 4); 
             }
-            else 
-                return !addr;
+            else if (tokens[p].type == NOT)
+            {
+                *success = true;
+                return (uint32_t)(!right);
+            }
+            else /* NEG */
+            {
+                *success = true;
+                return (uint32_t)(- (int32_t) right);
+            }
         }
     }
 
