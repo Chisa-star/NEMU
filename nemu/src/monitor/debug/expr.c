@@ -7,7 +7,7 @@
 
 enum {
     NOTYPE = 256, EQ, NUM, LEFT, RIGHT, DEREF, HEX,
-    NEQ, AND, OR, NOT, REG
+    NEQ, AND, OR, NOT, REG, UMINUS
 };
 
 static struct rule {
@@ -25,7 +25,7 @@ static struct rule {
     {"\\|\\|", OR},               /* logical or */
     {"\\+",   '+'},               /* plus */
     {"\\*",   '*'},               /* star (可能是乘法或解引用) */
-    {"-",     '-'},               /* minus */
+    {"-",     '-'},               /* minus (二元 or 一元) */
     {"/",     '/'},               /* divide */
     {"!",     NOT},               /* logical not */
     {"\\(",   LEFT},              /* left paren */
@@ -63,7 +63,7 @@ static bool make_token(char *e) {
     int position = 0;
     int i;
     regmatch_t pmatch;
-    
+
     nr_token = 0;
 
     while(e[position] != '\0') {
@@ -75,7 +75,7 @@ static bool make_token(char *e) {
                 position += substr_len;
 
                 if (rules[i].token_type == '*') {
-                    if (nr_token == 0 || 
+                    if (nr_token == 0 ||
                         tokens[nr_token-1].type == '+' ||
                         tokens[nr_token-1].type == '-' ||
                         tokens[nr_token-1].type == '*' ||
@@ -92,7 +92,25 @@ static bool make_token(char *e) {
                     tokens[nr_token].str[0] = '\0';
                     nr_token ++;
                 }
-                else if (rules[i].token_type == NOT) { // 一元运算符 !
+                else if (rules[i].token_type == '-') {
+                    if (nr_token == 0 ||
+                        tokens[nr_token-1].type == '+' ||
+                        tokens[nr_token-1].type == '-' ||
+                        tokens[nr_token-1].type == '*' ||
+                        tokens[nr_token-1].type == '/' ||
+                        tokens[nr_token-1].type == EQ ||
+                        tokens[nr_token-1].type == NEQ ||
+                        tokens[nr_token-1].type == AND ||
+                        tokens[nr_token-1].type == OR ||
+                        tokens[nr_token-1].type == LEFT) {
+                        tokens[nr_token].type = UMINUS;
+                    } else {
+                        tokens[nr_token].type = '-';
+                    }
+                    tokens[nr_token].str[0] = '\0';
+                    nr_token ++;
+                }
+                else if (rules[i].token_type == NOT) {
                     tokens[nr_token].type = NOT;
                     tokens[nr_token].str[0] = '\0';
                     nr_token ++;
@@ -113,7 +131,7 @@ static bool make_token(char *e) {
                         case NOTYPE:
                             break;
                         default: {
-                            tokens[nr_token].type = rules[i].token_type; 
+                            tokens[nr_token].type = rules[i].token_type;
                             tokens[nr_token].str[0] = '\0';
                             nr_token ++;
                             break;
@@ -130,22 +148,24 @@ static bool make_token(char *e) {
         }
     }
 
-    return true; 
+    return true;
 }
 
 static bool check_parentheses(int p, int q) {
-    int count = 0;
-    int i;
     if (p > q) return false;
     if (tokens[p].type != LEFT || tokens[q].type != RIGHT) return false;
 
-    for (i = p; i <= q; i++) {
-        if (tokens[i].type == LEFT) count++;
-        else if (tokens[i].type == RIGHT) count--;
-        if (count == 0 && i < q) return false;
-        if (count < 0) return false;
+    {
+        int count = 0;
+        int i;
+        for (i = p; i <= q; i++) {
+            if (tokens[i].type == LEFT) count++;
+            else if (tokens[i].type == RIGHT) count--;
+            if (count == 0 && i < q) return false;
+            if (count < 0) return false;
+        }
+        return count == 0;
     }
-    return count == 0;
 }
 
 static int find_main_operator(int p, int q) {
@@ -167,7 +187,7 @@ static int find_main_operator(int p, int q) {
                 case EQ: case NEQ: pri = 0; break;
                 case '+': case '-': pri = 1; break;
                 case '*': case '/': pri = 2; break;
-                default: break;
+                default: continue;
             }
 
             if (pri <= min_priority) {
@@ -181,27 +201,23 @@ static int find_main_operator(int p, int q) {
 
 uint32_t isa_reg_str2val(const char *s, bool *success) {
     int i;
-    // 32位寄存器
     for (i = 0; i < 8; i++) {
         if (strcmp(s, regsl[i]) == 0) { *success = true; return reg_l(i); }
         if (strcmp(s, regsw[i]) == 0) { *success = true; return reg_w(i); }
         if (strcmp(s, regsb[i]) == 0) { *success = true; return reg_b(i); }
     }
-    // 特殊寄存器
     if (strcmp(s, "eip") == 0) { *success = true; return cpu.eip; }
 
     *success = false;
     return 0;
 }
 
-int find_kuohao(int st, int en)
-{
+int find_kuohao(int st, int en) {
     int i, count = 0;
-    for (i = st; i <= en; i ++)
-    {
+    for (i = st; i <= en; i ++) {
         if (tokens[i].type == LEFT) count ++;
         else if (tokens[i].type == RIGHT) count --;
-        if (count == 0) return i; 
+        if (count == 0) return i;
     }
     return -1;
 }
@@ -222,7 +238,7 @@ static uint32_t eval(int p, int q, bool *success) {
             int is_negative = 0;
             if (str[0] == '-') { is_negative = 1; str ++; }
             {
-                uint32_t val = (uint32_t)strtoul(str, NULL, 16);                
+                uint32_t val = (uint32_t)strtoul(str, NULL, 16);
                 *success = true;
                 return is_negative ? -val : val;
             }
@@ -241,13 +257,14 @@ static uint32_t eval(int p, int q, bool *success) {
 
     {
         int op_pos = find_main_operator(p, q);
-        if (op_pos != -1)
-        {
+
+        if (op_pos != -1) {
             bool s1 = false, s2 = false;
             uint32_t left = eval(p, op_pos - 1, &s1);
             if (!s1) { *success = false; return 0; }
             uint32_t right = eval(op_pos + 1, q, &s2);
             if (!s2) { *success = false; return 0; }
+
             switch (tokens[op_pos].type) {
                 case '+': *success = true; return left + right;
                 case '-': *success = true; return left - right;
@@ -261,22 +278,21 @@ static uint32_t eval(int p, int q, bool *success) {
                 case OR:  *success = true; return (uint32_t)(left || right);
             }
         }
-        else
-        {
-            if (tokens[p].type == DEREF || tokens[p].type == NOT)
-            {
+        else {
+            if (tokens[p].type == DEREF || tokens[p].type == NOT || tokens[p].type == UMINUS) {
                 int end = p + 1;
                 if (tokens[end].type == LEFT)
                     end = find_kuohao(end, q);
                 {
-                    uint32_t addr = eval(p + 1, end, success);
+                    uint32_t val = eval(p + 1, end, success);
                     if (!*success) return 0;
-                    if (tokens[p].type == DEREF)
-                    {
-                        return swaddr_read(addr, 4); 
+                    if (tokens[p].type == DEREF) {
+                        return swaddr_read(val, 4);
+                    } else if (tokens[p].type == NOT) {
+                        return !val;
+                    } else if (tokens[p].type == UMINUS) {
+                        return (uint32_t)(-((int)val));
                     }
-                    else 
-                        return !addr;
                 }
             }
         }
