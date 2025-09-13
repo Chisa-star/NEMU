@@ -77,7 +77,7 @@ bool check_watchpoints() {
         if (!success) continue;
 
         if (new_val != p->val) {
-            printf("\nHit watchpoint %d at address 0x%08x\n", p->NO, cpu.eip);
+            printf("\nHint watchpoint %d at address 0x%08x\n", p->NO, cpu.eip);
 
             p-> val = new_val;  // 更新监视点记录的值
             nemu_state = STOP;
