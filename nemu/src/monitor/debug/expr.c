@@ -232,6 +232,7 @@ static uint32_t eval(int p, int q, bool *success) {
         return 0;
     }
 
+    // 只有一个 token，直接返回值
     if (p == q) {
         if (tokens[p].type == NUM) {
             int val = atoi(tokens[p].str);
@@ -240,8 +241,8 @@ static uint32_t eval(int p, int q, bool *success) {
         } else if (tokens[p].type == HEX) {
             char *str = tokens[p].str;
             int is_negative = 0;
-            if (str[0] == '-') { is_negative = 1; str ++; }
-            uint32_t val = (uint32_t)strtoul(str, NULL, 16);                
+            if (str[0] == '-') { is_negative = 1; str++; }
+            uint32_t val = (uint32_t)strtoul(str, NULL, 16);
             *success = true;
             return is_negative ? -val : val;
         } else if (tokens[p].type == REG) {
@@ -253,61 +254,58 @@ static uint32_t eval(int p, int q, bool *success) {
         }
     }
 
+    // 如果一对括号包裹整个表达式
     if (check_parentheses(p, q)) {
         return eval(p + 1, q - 1, success);
     }
 
+    // 找主运算符
     int op_pos = find_main_operator(p, q);
 
-    if (op_pos != -1)
-    {
+    if (op_pos != -1) {
         bool s1 = false, s2 = false;
         uint32_t left = eval(p, op_pos - 1, &s1);
         if (!s1) { *success = false; return 0; }
         uint32_t right = eval(op_pos + 1, q, &s2);
         if (!s2) { *success = false; return 0; }
+
         switch (tokens[op_pos].type) {
-        case '+': *success = true; return left + right;
-        case '-': *success = true; return left - right;
-        case '*': *success = true; return left * right;
-        case '/':
-            if (right == 0) { *success = false; return 0; }
-            *success = true; return left / right;
-        case EQ:  *success = true; return (uint32_t)(left == right);
-        case NEQ: *success = true; return (uint32_t)(left != right);
-        case AND: *success = true; return (uint32_t)(left && right);
-        case OR:  *success = true; return (uint32_t)(left || right);
+            case '+': *success = true; return left + right;
+            case '-': *success = true; return left - right;
+            case '*': *success = true; return left * right;
+            case '/':
+                if (right == 0) { *success = false; return 0; }
+                *success = true; return left / right;
+            case EQ:  *success = true; return (uint32_t)(left == right);
+            case NEQ: *success = true; return (uint32_t)(left != right);
+            case AND: *success = true; return (uint32_t)(left && right);
+            case OR:  *success = true; return (uint32_t)(left || right);
         }
-    }
-    else
-    {
-        /* 统一处理一元运算符：DEREF, NOT, NEG */
-        if (tokens[p].type == DEREF || tokens[p].type == NOT || tokens[p].type == NEG)
-        {
-            bool sright = false;
-            uint32_t right = eval(p + 1, q, &sright);
-            if (!sright) { *success = false; return 0; }
-            if (tokens[p].type == DEREF)
-            {
-                *success = true;
-                return swaddr_read(right, 4); 
+    } 
+    else {
+        // 处理一元运算符
+        if (tokens[p].type == DEREF || tokens[p].type == NOT) {
+            int end = p + 1;
+            if (tokens[end].type == LEFT)
+                end = find_kuohao(end, q);
+            uint32_t addr = eval(p + 1, end, success);
+            if (!*success) return 0;
+            if (tokens[p].type == DEREF) {
+                return swaddr_read(addr, 4);
+            } else {
+                return !addr;
             }
-            else if (tokens[p].type == NOT)
-            {
-                *success = true;
-                return (uint32_t)(!right);
-            }
-            else /* NEG */
-            {
-                *success = true;
-                return (uint32_t)(- (int32_t) right);
-            }
+        }
+        // 🔧 新增兜底逻辑：如果是括号包裹但 check_parentheses 没识别成功
+        else if (tokens[p].type == LEFT && tokens[q].type == RIGHT) {
+            return eval(p + 1, q - 1, success);
         }
     }
 
     *success = false;
     return 0;
 }
+
 
 uint32_t expr(char *e, bool *success) {
     if (!make_token(e)) {
