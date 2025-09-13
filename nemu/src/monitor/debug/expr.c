@@ -51,6 +51,7 @@ void init_regex() {
     }
 }
 
+
 typedef struct token {
     int type;
     char str[32];
@@ -150,7 +151,12 @@ static bool make_token(char *e) {
 
     return true;
 }
-
+void debug_tokens() {
+    int i;
+    for (i = 0; i < nr_token; i++) {
+        printf("token[%d]: type=%d, str=%s\n", i, tokens[i].type, tokens[i].str);
+    }
+}
 static bool check_parentheses(int p, int q) {
     if (p > q) return false;
     if (tokens[p].type != LEFT || tokens[q].type != RIGHT) return false;
@@ -307,6 +313,8 @@ uint32_t expr(char *e, bool *success) {
         *success = false;
         return 0;
     }
+    debug_tokens();
+
     if (nr_token == 0) {
         *success = true;
         return 0;
