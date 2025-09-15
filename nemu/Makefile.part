@@ -22,3 +22,7 @@ cpp: $(PP_TARGET)
 
 clean-cpp:
 	-@rm -f $(PP_TARGET) 2> /dev/null
+
+
+//sudo docker start nemu-image
+//sudo docker exec -it nemu-image /bin/bash
