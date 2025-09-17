@@ -144,7 +144,7 @@ static int cmd_x(char *args)
 {
 	char *narg= strtok(args," ");
 	if (narg == NULL){
-		printf("Input error");
+		printf("Input error\n");
 		return 0;
 	}
 
