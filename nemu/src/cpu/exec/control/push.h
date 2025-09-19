@@ -3,9 +3,6 @@
 
 #include "cpu/exec/helper.h"
 
-// 声明 push 指令相关的 helper
-make_helper(push_i_v);       // push 立即数
-make_helper(push_r_v);       // push 寄存器
-make_helper(push_rm_v);      // push 内存操作数
+make_helper(push_r_v); // push 寄存器（统一接口，根据 ops_decoded.is_operand_size_16 自动选择 16/32 位版本）
 
 #endif
