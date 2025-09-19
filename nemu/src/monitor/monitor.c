@@ -89,4 +89,9 @@ void restart() {
 
 	/* Initialize DRAM. */
 	init_ddr3();
+	cpu.eax = cpu.ebx = cpu.ecx = cpu.edx = 0;
+	cpu.esi = cpu.edi = cpu.ebp = cpu.esp = 0;
+	cpu.eflags.val = 0x00000002; // bit 1 保留为 1
+	cpu.eip = ENTRY_START;
+
 }
