@@ -5,6 +5,7 @@
 #include "data-mov/movext.h"
 #include "data-mov/cltd.h"
 #include "data-mov/pop.h"
+#include "data-mov/leave.h"
 
 #include "arith/add.h"
 #include "arith/adc.h"
