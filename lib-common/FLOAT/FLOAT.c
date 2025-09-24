@@ -14,8 +14,8 @@ typedef union {
 #define __scale(x) (__sign(x) ? -(x) : (x))
 
 FLOAT F_mul_F(FLOAT a, FLOAT b) {
-	nemu_assert(0);
-	return 0;
+	int64_t scale = ((int64_t)a * (int64_t)b) >> 16;
+	return scale;
 }
 
 FLOAT F_div_F(FLOAT a, FLOAT b) {
