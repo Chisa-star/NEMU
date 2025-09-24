@@ -1,4 +1,17 @@
 #include "FLOAT.h"
+#include <stdint.h>
+
+typedef union {
+	struct {
+		uint32_t m : 23;
+		uint32_t e : 8;
+		uint32_t s : 1;
+	};
+	uint32_t val;
+} Float;
+
+#define __sign(x) ((x) & 0x80000000)
+#define __scale(x) (__sign(x) ? -(x) : (x))
 
 FLOAT F_mul_F(FLOAT a, FLOAT b) {
 	nemu_assert(0);
@@ -24,8 +37,9 @@ FLOAT F_div_F(FLOAT a, FLOAT b) {
 	 * out another way to perform the division.
 	 */
 
-	nemu_assert(0);
-	return 0;
+	FLOAT q, r;
+	asm volatile("idiv %2" : "=a"(q), "=d"(r) : "r"(b), "a"(a << 16), "d"(a >> 16));
+	return q;
 }
 
 FLOAT f2F(float a) {
@@ -39,8 +53,19 @@ FLOAT f2F(float a) {
 	 * performing arithmetic operations on it directly?
 	 */
 
-	nemu_assert(0);
-	return 0;
+	Float f;
+	void *temp = &a;
+	f.val = *(uint32_t *)temp;
+	uint32_t m = f.m | (1 << 23);
+	int shift = 134 - (int)f.e;
+//	assert(shift <= 23 && shift >= -7);
+	if(shift < 0) {
+		m <<= (-shift);
+	}
+	else {
+		m >>= shift;
+	}
+	return (__sign(f.val) ? -m : m);
 }
 
 FLOAT Fabs(FLOAT a) {
