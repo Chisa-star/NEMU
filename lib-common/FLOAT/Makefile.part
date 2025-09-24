@@ -8,13 +8,12 @@ FLOAT_A_OBJ := $(FLOAT_O) $(FLOAT_VFPRINTF_O)
 $(FLOAT): $(FLOAT_A_OBJ)
 	ar r $@ $^
 
-# TODO: complete the following rules
-
+# compile FLOAT.o
 $(FLOAT_O): lib-common/FLOAT/FLOAT.c
-	mkdir -p obj/lib-common
-	gcc -m32 -fno-builtin -I$(LIB_COMMON_DIR) -O2 -c -o $@ $<
+	mkdir -p $(@D)
+	$(CC) -m32 -O2 -fno-builtin -I$(LIB_COMMON_DIR) -c -o $@ $<
 
+# compile FLOAT_vfprintf.o
 $(FLOAT_VFPRINTF_O): lib-common/FLOAT/FLOAT_vfprintf.c
-	mkdir -p obj/lib-common
-	gcc -m32 -fno-builtin -I$(LIB_COMMON_DIR) -O2 -c -o $@ $<
-
+	mkdir -p $(@D)
+	$(CC) -m32 -O2 -fno-builtin -fno-stack-protector -D_FORTIFY_SOURCE=0 -I$(LIB_COMMON_DIR) -c -o $@ $<
