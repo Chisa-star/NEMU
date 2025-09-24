@@ -12,9 +12,9 @@ $(FLOAT): $(FLOAT_A_OBJ)
 
 $(FLOAT_O): lib-common/FLOAT/FLOAT.c
 	mkdir -p obj/lib-common
-	$(CC) -m32 -O2 -fno-builtin -Ilib-common -c $< -o $@
+	gcc -m32 -fno-builtin -I$(LIB_COMMON_DIR) -O2 -c -o $@ $<
 
 $(FLOAT_VFPRINTF_O): lib-common/FLOAT/FLOAT_vfprintf.c
 	mkdir -p obj/lib-common
-	$(CC) -m32 -O2 -fno-builtin -fno-stack-protector -D_FORTIFY_SOURCE=0 -Ilib-common -c $< -o $@
+	gcc -m32 -fno-builtin -I$(LIB_COMMON_DIR) -O2 -c -o $@ $<
 
