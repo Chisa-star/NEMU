@@ -69,8 +69,7 @@ FLOAT f2F(float a) {
 }
 
 FLOAT Fabs(FLOAT a) {
-	nemu_assert(0);
-	return 0;
+        return __scale(a);
 }
 
 /* Functions below are already implemented */
