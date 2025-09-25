@@ -160,15 +160,6 @@ void debug_tokens() {
         printf("token[%d]: type=%d, str=%s\n", i, tokens[i].type, tokens[i].str);
     }
 }
-void debug_memory_access(uint32_t addr) {
-    printf("Memory at 0x%x: ", addr);
-    int i;
-    for ( i = 0; i < 16; i++) {
-        uint8_t byte = swaddr_read(addr + i, 1);
-        printf("%02x ", byte);
-    }
-    printf("\n");
-}
 
 static bool check_parentheses(int p, int q) {
     if (p > q) return false;
@@ -259,37 +250,35 @@ static uint32_t eval(int p, int q, bool *success) {
     }
 
     if (p == q) {
-    if (tokens[p].type == NUM) {
-        int val = atoi(tokens[p].str);
-        *success = true;
-        return (uint32_t)val;
-    } else if (tokens[p].type == HEX) {
-        char *str = tokens[p].str;
-        int is_negative = 0;
-        if (str[0] == '-') { is_negative = 1; str ++; }
-        {
-            uint32_t val = (uint32_t)strtoul(str, NULL, 16);
+        if (tokens[p].type == NUM) {
+            int val = atoi(tokens[p].str);
             *success = true;
-            return is_negative ? -val : val;
-        }
-    } else if (tokens[p].type == REG) {
-        uint32_t val = isa_reg_str2val(tokens[p].str + 1, success);
-        return val;
-    } else if (tokens[p].type == VARIABLE) {
-        uint32_t addr = lookup_variable(tokens[p].str, success);
-        if (*success) {
-            printf("Variable %s found at address: 0x%x\n", tokens[p].str, addr);
-            debug_memory_access(addr);  // 查看内存内容
-            return addr;
+            return (uint32_t)val;
+        } else if (tokens[p].type == HEX) {
+            char *str = tokens[p].str;
+            int is_negative = 0;
+            if (str[0] == '-') { is_negative = 1; str ++; }
+            {
+                uint32_t val = (uint32_t)strtoul(str, NULL, 16);
+                *success = true;
+                return is_negative ? -val : val;
+            }
+        } else if (tokens[p].type == REG) {
+            uint32_t val = isa_reg_str2val(tokens[p].str + 1, success);
+            return val;
+        } else if (tokens[p].type == VARIABLE) {
+            uint32_t addr = lookup_variable(tokens[p].str, success);
+            if (*success) {
+                return addr;  // 返回变量地址
+            } else {
+                printf("Unknown variable: %s\n", tokens[p].str);
+                return 0;
+            }
         } else {
-            printf("Unknown variable: %s\n", tokens[p].str);
+            *success = false;
             return 0;
         }
-    } else {
-        *success = false;
-        return 0;
     }
-}
 
     if (check_parentheses(p, q)) {
         return eval(p + 1, q - 1, success);
@@ -307,28 +296,27 @@ static uint32_t eval(int p, int q, bool *success) {
 
             switch (tokens[op_pos].type) {
                 case '+': 
-        // 智能指针运算：如果左边是地址，则按int大小进行指针运算
-        if (tokens[op_pos-1].type == VARIABLE || 
-            (op_pos > 0 && tokens[op_pos-1].type == DEREF) ||
-            (op_pos > 1 && tokens[op_pos-2].type == DEREF)) {
-            // 指针运算：地址 + 偏移量 * sizeof(int)
-            *success = true; 
-            return left + right * 4;
-        } else {
-            *success = true; 
-            return left + right;
-        }
-    case '-': 
-        // 类似的指针运算处理
-        if (tokens[op_pos-1].type == VARIABLE || 
-            (op_pos > 0 && tokens[op_pos-1].type == DEREF) ||
-            (op_pos > 1 && tokens[op_pos-2].type == DEREF)) {
-            *success = true; 
-            return left - right * 4;
-        } else {
-            *success = true; 
-            return left - right;
-        }
+                    // 指针运算：如果左操作数是地址类型，则右操作数需要乘以4
+                    if (op_pos > p) {
+                        Token* left_token = &tokens[op_pos-1];
+                        if (left_token->type == VARIABLE || left_token->type == DEREF) {
+                            *success = true; 
+                            return left + right * 4;
+                        }
+                    }
+                    *success = true; 
+                    return left + right;
+                case '-': 
+                    // 类似的指针运算处理
+                    if (op_pos > p) {
+                        Token* left_token = &tokens[op_pos-1];
+                        if (left_token->type == VARIABLE || left_token->type == DEREF) {
+                            *success = true; 
+                            return left - right * 4;
+                        }
+                    }
+                    *success = true; 
+                    return left - right;
                 case '*': *success = true; return left * right;
                 case '/':
                     if (right == 0) { *success = false; return 0; }
@@ -369,8 +357,6 @@ uint32_t expr(char *e, bool *success) {
         return 0;
     }
     
-    //debug_tokens();
-
     if (nr_token == 0) {
         *success = true;
         return 0;
