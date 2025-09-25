@@ -5,39 +5,31 @@
 #include <string.h>
 #include <stdio.h>
 
-/* 外部函数（来自 elf.c）：
- *   uint32_t look_up_symtab(char *sym, bool *success);
- * 需要在 nemu 启动流程中调用 load_elf_tables(...) 以填充符号表。
- */
-extern uint32_t look_up_symtab(char *sym, bool *success);
-/* 读取虚拟地址（通常由 memory 模块提供）。如果 nemu 使用不同名字，请替换。 */
-extern uint32_t vaddr_read(uint32_t vaddr, int len);
-
 enum {
     NOTYPE = 256, EQ, NUM, LEFT, RIGHT, DEREF, HEX,
-    NEQ, AND, OR, NOT, REG, UMINUS, VAR
+    NEQ, AND, OR, NOT, REG, UMINUS, TK_ID
 };
 
 static struct rule {
     char *regex;
     int token_type;
 } rules[] = {
-    {"0x[0-9a-fA-F]+", HEX},      /* 正十六进制数字 */
-    {"[0-9]+", NUM},              /* 正十进制数字 */
-    {" +",    NOTYPE},            /* spaces */
-    {"==",    EQ},                /* equal */
-    {"!=",    NEQ},               /* not equal */
-    {"&&",    AND},               /* logical and */
-    {"\\|\\|", OR},               /* logical or */
-    {"\\+",   '+'},               /* plus */
-    {"\\*",   '*'},               /* star (可能是乘法或解引用) */
-    {"-",     '-'},               /* minus (二元 or 一元) */
-    {"/",     '/'},               /* divide */
-    {"!",     NOT},               /* logical not */
-    {"\\(",   LEFT},              /* left paren */
-    {"\\)",   RIGHT},             /* right paren */
-    {"\\$[a-zA-Z]+[0-9]*", REG},  /* register: $eax, $eip ... */
-    {"[a-zA-Z_][a-zA-Z0-9_]*", VAR} /* variable / identifier (符号名) */
+    {"0x[0-9a-fA-F]+", HEX},        /* 十六进制数 */
+    {"[0-9]+", NUM},                /* 十进制数 */
+    {" +", NOTYPE},                 /* 空格 */
+    {"==", EQ},
+    {"!=", NEQ},
+    {"&&", AND},
+    {"\\|\\|", OR},
+    {"\\+", '+'},
+    {"\\*", '*'},                   /* 乘法或解引用 */
+    {"-", '-'},                     /* 二元或一元负号 */
+    {"/", '/'},
+    {"!", NOT},
+    {"\\(", LEFT},
+    {"\\)", RIGHT},
+    {"\\$[a-zA-Z]+[0-9]*", REG},    /* 寄存器 */
+    {"[a-zA-Z_][a-zA-Z0-9_]*", TK_ID} /* 全局变量符号 */
 };
 
 #define NR_REGEX (sizeof(rules) / sizeof(rules[0]))
@@ -48,8 +40,7 @@ void init_regex() {
     int i;
     char error_msg[128];
     int ret;
-
-    for(i = 0; i < NR_REGEX; i ++) {
+    for(i = 0; i < NR_REGEX; i++) {
         ret = regcomp(&re[i], rules[i].regex, REG_EXTENDED);
         if(ret != 0) {
             regerror(ret, &re[i], error_msg, 128);
@@ -58,17 +49,14 @@ void init_regex() {
     }
 }
 
-
 typedef struct token {
     int type;
-    char str[64];
+    char str[32];
 } Token;
 
-/* 可根据需求调整最大 token 数量 */
-Token tokens[64];
+Token tokens[32];
 int nr_token;
 
-/* make_token: 词法分析，将输入字符串划分为 tokens */
 static bool make_token(char *e) {
     int position = 0;
     int i;
@@ -77,16 +65,14 @@ static bool make_token(char *e) {
     nr_token = 0;
 
     while(e[position] != '\0') {
-        for(i = 0; i < NR_REGEX; i ++) {
+        for(i = 0; i < NR_REGEX; i++) {
             if(regexec(&re[i], e + position, 1, &pmatch, 0) == 0 && pmatch.rm_so == 0) {
                 char *substr_start = e + position;
                 int substr_len = (int)(pmatch.rm_eo - pmatch.rm_so);
-
                 position += substr_len;
 
-                /* 处理可能为解引用或乘号的 '*' */
-                if (rules[i].token_type == '*') {
-                    if (nr_token == 0 ||
+                if(rules[i].token_type == '*') {
+                    if(nr_token == 0 ||
                         tokens[nr_token-1].type == '+' ||
                         tokens[nr_token-1].type == '-' ||
                         tokens[nr_token-1].type == '*' ||
@@ -101,11 +87,10 @@ static bool make_token(char *e) {
                         tokens[nr_token].type = '*';
                     }
                     tokens[nr_token].str[0] = '\0';
-                    nr_token ++;
+                    nr_token++;
                 }
-                /* 处理可能为一元负号或二元减号的 '-' */
-                else if (rules[i].token_type == '-') {
-                    if (nr_token == 0 ||
+                else if(rules[i].token_type == '-') {
+                    if(nr_token == 0 ||
                         tokens[nr_token-1].type == '+' ||
                         tokens[nr_token-1].type == '-' ||
                         tokens[nr_token-1].type == '*' ||
@@ -120,34 +105,33 @@ static bool make_token(char *e) {
                         tokens[nr_token].type = '-';
                     }
                     tokens[nr_token].str[0] = '\0';
-                    nr_token ++;
+                    nr_token++;
                 }
-                else if (rules[i].token_type == NOT) {
+                else if(rules[i].token_type == NOT) {
                     tokens[nr_token].type = NOT;
                     tokens[nr_token].str[0] = '\0';
-                    nr_token ++;
+                    nr_token++;
                 }
                 else {
                     switch(rules[i].token_type) {
                         case NUM:
                         case HEX:
                         case REG:
-                        case VAR: {
+                        case TK_ID: {
                             tokens[nr_token].type = rules[i].token_type;
-                            if (substr_len >= (int)sizeof(tokens[nr_token].str))
+                            if(substr_len >= (int)sizeof(tokens[nr_token].str))
                                 substr_len = (int)sizeof(tokens[nr_token].str) - 1;
                             strncpy(tokens[nr_token].str, substr_start, substr_len);
                             tokens[nr_token].str[substr_len] = '\0';
-                            nr_token ++;
+                            nr_token++;
                             break;
                         }
                         case NOTYPE:
-                            /* skip spaces */
                             break;
                         default: {
                             tokens[nr_token].type = rules[i].token_type;
                             tokens[nr_token].str[0] = '\0';
-                            nr_token ++;
+                            nr_token++;
                             break;
                         }
                     }
@@ -167,186 +151,131 @@ static bool make_token(char *e) {
 
 void debug_tokens() {
     int i;
-    for (i = 0; i < nr_token; i++) {
+    for(i = 0; i < nr_token; i++) {
         printf("token[%d]: type=%d, str=%s\n", i, tokens[i].type, tokens[i].str);
     }
 }
 
 static bool check_parentheses(int p, int q) {
-    if (p > q) return false;
-    if (tokens[p].type != LEFT || tokens[q].type != RIGHT) return false;
+    if(p > q) return false;
+    if(tokens[p].type != LEFT || tokens[q].type != RIGHT) return false;
 
-    {
-        int count = 0;
-        int i;
-        for (i = p; i <= q; i++) {
-            if (tokens[i].type == LEFT) count++;
-            else if (tokens[i].type == RIGHT) count--;
-            if (count == 0 && i < q) return false;
-            if (count < 0) return false;
-        }
-        return count == 0;
+    int count = 0;
+    for(int i = p; i <= q; i++) {
+        if(tokens[i].type == LEFT) count++;
+        else if(tokens[i].type == RIGHT) count--;
+        if(count == 0 && i < q) return false;
+        if(count < 0) return false;
     }
+    return count == 0;
 }
 
 static int find_main_operator(int p, int q) {
-    int i;
-    int level = 0;
-    int main_op_pos = -1;
-    int min_priority = 999;
+    int level = 0, main_op_pos = -1, min_priority = 999;
+    for(int i = p; i <= q; i++) {
+        if(tokens[i].type == LEFT) { level++; continue; }
+        if(tokens[i].type == RIGHT) { level--; continue; }
+        if(level != 0) continue;
 
-    for (i = p; i <= q; i++) {
-        if (tokens[i].type == LEFT) { level++; continue; }
-        if (tokens[i].type == RIGHT) { level--; continue; }
-        if (level != 0) continue;
-
-        {
-            int pri = 999;
-            switch (tokens[i].type) {
-                case OR:  pri = -2; break;
-                case AND: pri = -1; break;
-                case EQ: case NEQ: pri = 0; break;
-                case '+': case '-': pri = 1; break;
-                case '*': case '/': pri = 2; break;
-                default: continue;
-            }
-
-            if (pri <= min_priority) {
-                min_priority = pri;
-                main_op_pos = i;
-            }
+        int pri = 999;
+        switch(tokens[i].type) {
+            case OR: pri = -2; break;
+            case AND: pri = -1; break;
+            case EQ: case NEQ: pri = 0; break;
+            case '+': case '-': pri = 1; break;
+            case '*': case '/': pri = 2; break;
+            default: continue;
+        }
+        if(pri <= min_priority) {
+            min_priority = pri;
+            main_op_pos = i;
         }
     }
     return main_op_pos;
 }
 
 uint32_t isa_reg_str2val(const char *s, bool *success) {
-    int i;
-    for (i = 0; i < 8; i++) {
-        if (strcmp(s, regsl[i]) == 0) { *success = true; return reg_l(i); }
-        if (strcmp(s, regsw[i]) == 0) { *success = true; return reg_w(i); }
-        if (strcmp(s, regsb[i]) == 0) { *success = true; return reg_b(i); }
+    for(int i = 0; i < 8; i++) {
+        if(strcmp(s, regsl[i]) == 0) { *success=true; return reg_l(i); }
+        if(strcmp(s, regsw[i]) == 0) { *success=true; return reg_w(i); }
+        if(strcmp(s, regsb[i]) == 0) { *success=true; return reg_b(i); }
     }
-    if (strcmp(s, "eip") == 0) { *success = true; return cpu.eip; }
-
-    *success = false;
+    if(strcmp(s, "eip") == 0) { *success=true; return cpu.eip; }
+    *success=false;
     return 0;
 }
 
 int find_kuohao(int st, int en) {
-    int i, count = 0;
-    for (i = st; i <= en; i ++) {
-        if (tokens[i].type == LEFT) count ++;
-        else if (tokens[i].type == RIGHT) count --;
-        if (count == 0) return i;
+    int count=0;
+    for(int i=st;i<=en;i++){
+        if(tokens[i].type==LEFT) count++;
+        else if(tokens[i].type==RIGHT) count--;
+        if(count==0) return i;
     }
     return -1;
 }
 
-/* eval: 递归计算表达式值，返回 uint32_t；*success 标示是否成功 */
+// 外部符号
+extern uint32_t look_up_symtab(char *sym, bool *success);
+
 static uint32_t eval(int p, int q, bool *success) {
-    if (p > q) {
-        *success = false;
+    if(p>q){ *success=false; return 0; }
+
+    if(p==q){
+        if(tokens[p].type==NUM){ *success=true; return atoi(tokens[p].str); }
+        if(tokens[p].type==HEX){ *success=true; return (uint32_t)strtoul(tokens[p].str,NULL,16); }
+        if(tokens[p].type==REG){ return isa_reg_str2val(tokens[p].str+1, success); }
+        if(tokens[p].type==TK_ID){
+            bool s;
+            uint32_t addr = look_up_symtab(tokens[p].str, &s);
+            if(!s){ printf("Unknown symbol %s\n", tokens[p].str); assert(0); }
+            *success = true;
+            return addr; // ⚠️ 只返回符号地址
+        }
+        *success=false;
         return 0;
     }
 
-    if (p == q) {
-        if (tokens[p].type == NUM) {
-            int val = atoi(tokens[p].str);
-            *success = true;
-            return (uint32_t)val;
-        } else if (tokens[p].type == HEX) {
-            char *str = tokens[p].str;
-            int is_negative = 0;
-            if (str[0] == '-') { is_negative = 1; str ++; }
-            {
-                uint32_t val = (uint32_t)strtoul(str, NULL, 16);
-                *success = true;
-                return is_negative ? -val : val;
-            }
-        } else if (tokens[p].type == REG) {
-            uint32_t val = isa_reg_str2val(tokens[p].str + 1, success);
-            return val;
-        } else if (tokens[p].type == VAR) {
-            /* 标识符：查符号表获取地址，再读取内存得到变量的值 */
-            bool sym_ok = false;
-            uint32_t addr = look_up_symtab(tokens[p].str, &sym_ok);
-            if (!sym_ok) {
-                *success = false;
-                return 0;
-            }
-            /* 这里我们默认变量是 4 字节（int）；如果你想返回变量地址本身，直接 return addr 并 *success = true */
-            uint32_t val = swaddr_read(addr, 4);
-            *success = true;
-            return val;
-        } else {
-            *success = false;
-            return 0;
+    if(check_parentheses(p,q)) return eval(p+1,q-1,success);
+
+    int op_pos = find_main_operator(p,q);
+    if(op_pos != -1){
+        bool s1=false,s2=false;
+        uint32_t left = eval(p,op_pos-1,&s1);
+        if(!s1){ *success=false; return 0; }
+        uint32_t right = eval(op_pos+1,q,&s2);
+        if(!s2){ *success=false; return 0; }
+
+        switch(tokens[op_pos].type){
+            case '+': *success=true; return left+right;
+            case '-': *success=true; return left-right;
+            case '*': *success=true; return left*right;
+            case '/': 
+                if(right==0){ *success=false; return 0; }
+                *success=true; return left/right;
+            case EQ: *success=true; return (left==right);
+            case NEQ:*success=true; return (left!=right);
+            case AND:*success=true; return (left&&right);
+            case OR: *success=true; return (left||right);
+        }
+    } else {
+        if(tokens[p].type==DEREF || tokens[p].type==NOT || tokens[p].type==UMINUS){
+            int end = p+1;
+            if(tokens[end].type==LEFT) end=find_kuohao(end,q);
+            uint32_t val = eval(p+1,end,success);
+            if(!*success) return 0;
+            if(tokens[p].type==DEREF) return vaddr_read(val,4); // ⚠️ 这里真正取值
+            if(tokens[p].type==NOT) return !val;
+            if(tokens[p].type==UMINUS) return (uint32_t)(-(int)val);
         }
     }
 
-    if (check_parentheses(p, q)) {
-        return eval(p + 1, q - 1, success);
-    }
-
-    {
-        int op_pos = find_main_operator(p, q);
-
-        if (op_pos != -1) {
-            bool s1 = false, s2 = false;
-            uint32_t left = eval(p, op_pos - 1, &s1);
-            if (!s1) { *success = false; return 0; }
-            uint32_t right = eval(op_pos + 1, q, &s2);
-            if (!s2) { *success = false; return 0; }
-
-            switch (tokens[op_pos].type) {
-                case '+': *success = true; return left + right;
-                case '-': *success = true; return left - right;
-                case '*': *success = true; return left * right;
-                case '/':
-                    if (right == 0) { *success = false; return 0; }
-                    *success = true; return left / right;
-                case EQ:  *success = true; return (uint32_t)(left == right);
-                case NEQ: *success = true; return (uint32_t)(left != right);
-                case AND: *success = true; return (uint32_t)(left && right);
-                case OR:  *success = true; return (uint32_t)(left || right);
-            }
-        }
-        else {
-            if (tokens[p].type == DEREF || tokens[p].type == NOT || tokens[p].type == UMINUS) {
-                int end = p + 1;
-                if (tokens[end].type == LEFT)
-                    end = find_kuohao(end, q);
-                {
-                    uint32_t val = eval(p + 1, end, success);
-                    if (!*success) return 0;
-                    if (tokens[p].type == DEREF) {
-                        return swaddr_read(val, 4);
-                    } else if (tokens[p].type == NOT) {
-                        return !val;
-                    } else if (tokens[p].type == UMINUS) {
-                        return (uint32_t)(-((int)val));
-                    }
-                }
-            }
-        }
-    }
-
-    *success = false;
+    *success=false;
     return 0;
 }
 
-uint32_t expr(char *e, bool *success) {
-    if (!make_token(e)) {
-        *success = false;
-        return 0;
-    }
-    
-    //debug_tokens();
-
-    if (nr_token == 0) {
-        *success = true;
-        return 0;
-    }
-    return eval(0, nr_token - 1, success);
+uint32_t expr(char *e, bool *success){
+    if(!make_token(e)){ *success=false; return 0; }
+    if(nr_token==0){ *success=true; return 0; }
+    return eval(0,nr_token-1,success);
 }
