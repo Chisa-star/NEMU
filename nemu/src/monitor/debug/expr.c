@@ -306,8 +306,29 @@ static uint32_t eval(int p, int q, bool *success) {
             if (!s2) { *success = false; return 0; }
 
             switch (tokens[op_pos].type) {
-                case '+': *success = true; return left + right;
-                case '-': *success = true; return left - right;
+                case '+': 
+        // 智能指针运算：如果左边是地址，则按int大小进行指针运算
+        if (tokens[op_pos-1].type == VARIABLE || 
+            (op_pos > 0 && tokens[op_pos-1].type == DEREF) ||
+            (op_pos > 1 && tokens[op_pos-2].type == DEREF)) {
+            // 指针运算：地址 + 偏移量 * sizeof(int)
+            *success = true; 
+            return left + right * 4;
+        } else {
+            *success = true; 
+            return left + right;
+        }
+    case '-': 
+        // 类似的指针运算处理
+        if (tokens[op_pos-1].type == VARIABLE || 
+            (op_pos > 0 && tokens[op_pos-1].type == DEREF) ||
+            (op_pos > 1 && tokens[op_pos-2].type == DEREF)) {
+            *success = true; 
+            return left - right * 4;
+        } else {
+            *success = true; 
+            return left - right;
+        }
                 case '*': *success = true; return left * right;
                 case '/':
                     if (right == 0) { *success = false; return 0; }
