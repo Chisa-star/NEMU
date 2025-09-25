@@ -5,6 +5,7 @@
 CC := gcc
 LD := ld
 CFLAGS := -MMD -Wall -Werror -c
+CFLAGS += -fno-stack-protector -U_FORTIFY_SOURCE
 
 LIB_COMMON_DIR := lib-common
 LIBC_INC_DIR := $(LIB_COMMON_DIR)/uclibc/include
