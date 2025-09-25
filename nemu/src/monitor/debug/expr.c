@@ -161,7 +161,8 @@ static bool check_parentheses(int p, int q) {
     if(tokens[p].type != LEFT || tokens[q].type != RIGHT) return false;
 
     int count = 0;
-    for(int i = p; i <= q; i++) {
+    int i;
+    for(i = p; i <= q; i++) {
         if(tokens[i].type == LEFT) count++;
         else if(tokens[i].type == RIGHT) count--;
         if(count == 0 && i < q) return false;
@@ -172,7 +173,8 @@ static bool check_parentheses(int p, int q) {
 
 static int find_main_operator(int p, int q) {
     int level = 0, main_op_pos = -1, min_priority = 999;
-    for(int i = p; i <= q; i++) {
+    int i;
+    for(i = p; i <= q; i++) {
         if(tokens[i].type == LEFT) { level++; continue; }
         if(tokens[i].type == RIGHT) { level--; continue; }
         if(level != 0) continue;
@@ -195,7 +197,8 @@ static int find_main_operator(int p, int q) {
 }
 
 uint32_t isa_reg_str2val(const char *s, bool *success) {
-    for(int i = 0; i < 8; i++) {
+    int i;
+    for(i = 0; i < 8; i++) {
         if(strcmp(s, regsl[i]) == 0) { *success=true; return reg_l(i); }
         if(strcmp(s, regsw[i]) == 0) { *success=true; return reg_w(i); }
         if(strcmp(s, regsb[i]) == 0) { *success=true; return reg_b(i); }
@@ -207,7 +210,8 @@ uint32_t isa_reg_str2val(const char *s, bool *success) {
 
 int find_kuohao(int st, int en) {
     int count=0;
-    for(int i=st;i<=en;i++){
+    int i;
+    for(i=st;i<=en;i++){
         if(tokens[i].type==LEFT) count++;
         else if(tokens[i].type==RIGHT) count--;
         if(count==0) return i;
@@ -264,7 +268,7 @@ static uint32_t eval(int p, int q, bool *success) {
             if(tokens[end].type==LEFT) end=find_kuohao(end,q);
             uint32_t val = eval(p+1,end,success);
             if(!*success) return 0;
-            if(tokens[p].type==DEREF) return vaddr_read(val,4); // ⚠️ 这里真正取值
+            if(tokens[p].type==DEREF) return swaddr_read(val,4); // ⚠️ 这里真正取值
             if(tokens[p].type==NOT) return !val;
             if(tokens[p].type==UMINUS) return (uint32_t)(-(int)val);
         }
