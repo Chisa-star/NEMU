@@ -5,6 +5,14 @@
 #include <string.h>
 #include <stdio.h>
 
+/* 外部函数（来自 elf.c）：
+ *   uint32_t look_up_symtab(char *sym, bool *success);
+ * 需要在 nemu 启动流程中调用 load_elf_tables(...) 以填充符号表。
+ */
+extern uint32_t look_up_symtab(char *sym, bool *success);
+/* 读取虚拟地址（通常由 memory 模块提供）。如果 nemu 使用不同名字，请替换。 */
+extern uint32_t vaddr_read(uint32_t vaddr, int len);
+
 enum {
     NOTYPE = 256, EQ, NUM, LEFT, RIGHT, DEREF, HEX,
     NEQ, AND, OR, NOT, REG, UMINUS, VAR
@@ -29,7 +37,7 @@ static struct rule {
     {"\\(",   LEFT},              /* left paren */
     {"\\)",   RIGHT},             /* right paren */
     {"\\$[a-zA-Z]+[0-9]*", REG},  /* register: $eax, $eip ... */
-    {"[a-zA-Z_][a-zA-Z0-9_]*", VAR} /* variable */
+    {"[a-zA-Z_][a-zA-Z0-9_]*", VAR} /* variable / identifier (符号名) */
 };
 
 #define NR_REGEX (sizeof(rules) / sizeof(rules[0]))
@@ -50,52 +58,17 @@ void init_regex() {
     }
 }
 
+
 typedef struct token {
     int type;
-    char str[32];
+    char str[64];
 } Token;
 
-Token tokens[32];
+/* 可根据需求调整最大 token 数量 */
+Token tokens[64];
 int nr_token;
 
-/* ------------ 变量表 ------------ */
-typedef struct {
-    char name[32];
-    uint32_t value;
-} Var;
-
-Var var_table[64];
-int var_count = 0;
-
-uint32_t get_var_value(const char *name, bool *success) {
-    int i;
-    for (i = 0; i < var_count; i++) {
-        if (strcmp(var_table[i].name, name) == 0) {
-            *success = true;
-            return var_table[i].value;
-        }
-    }
-    *success = false;
-    return 0;
-}
-
-void set_var_value(const char *name, uint32_t value) {
-    int i;
-    for (i = 0; i < var_count; i++) {
-        if (strcmp(var_table[i].name, name) == 0) {
-            var_table[i].value = value;
-            return;
-        }
-    }
-    if (var_count < 64) {
-        strncpy(var_table[var_count].name, name, sizeof(var_table[var_count].name) - 1);
-        var_table[var_count].name[sizeof(var_table[var_count].name) - 1] = '\0';
-        var_table[var_count].value = value;
-        var_count++;
-    }
-}
-/* ------------ 变量表 END ------------ */
-
+/* make_token: 词法分析，将输入字符串划分为 tokens */
 static bool make_token(char *e) {
     int position = 0;
     int i;
@@ -111,6 +84,7 @@ static bool make_token(char *e) {
 
                 position += substr_len;
 
+                /* 处理可能为解引用或乘号的 '*' */
                 if (rules[i].token_type == '*') {
                     if (nr_token == 0 ||
                         tokens[nr_token-1].type == '+' ||
@@ -129,6 +103,7 @@ static bool make_token(char *e) {
                     tokens[nr_token].str[0] = '\0';
                     nr_token ++;
                 }
+                /* 处理可能为一元负号或二元减号的 '-' */
                 else if (rules[i].token_type == '-') {
                     if (nr_token == 0 ||
                         tokens[nr_token-1].type == '+' ||
@@ -167,6 +142,7 @@ static bool make_token(char *e) {
                             break;
                         }
                         case NOTYPE:
+                            /* skip spaces */
                             break;
                         default: {
                             tokens[nr_token].type = rules[i].token_type;
@@ -267,6 +243,7 @@ int find_kuohao(int st, int en) {
     return -1;
 }
 
+/* eval: 递归计算表达式值，返回 uint32_t；*success 标示是否成功 */
 static uint32_t eval(int p, int q, bool *success) {
     if (p > q) {
         *success = false;
@@ -291,7 +268,16 @@ static uint32_t eval(int p, int q, bool *success) {
             uint32_t val = isa_reg_str2val(tokens[p].str + 1, success);
             return val;
         } else if (tokens[p].type == VAR) {
-            uint32_t val = get_var_value(tokens[p].str, success);
+            /* 标识符：查符号表获取地址，再读取内存得到变量的值 */
+            bool sym_ok = false;
+            uint32_t addr = look_up_symtab(tokens[p].str, &sym_ok);
+            if (!sym_ok) {
+                *success = false;
+                return 0;
+            }
+            /* 这里我们默认变量是 4 字节（int）；如果你想返回变量地址本身，直接 return addr 并 *success = true */
+            uint32_t val = swaddr_read(addr, 4);
+            *success = true;
             return val;
         } else {
             *success = false;
@@ -356,7 +342,7 @@ uint32_t expr(char *e, bool *success) {
         return 0;
     }
     
-    // debug_tokens();
+    //debug_tokens();
 
     if (nr_token == 0) {
         *success = true;
