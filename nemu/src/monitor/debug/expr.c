@@ -7,7 +7,7 @@
 
 enum {
     NOTYPE = 256, EQ, NUM, LEFT, RIGHT, DEREF, HEX,
-    NEQ, AND, OR, NOT, REG, UMINUS
+    NEQ, AND, OR, NOT, REG, UMINUS, VAR
 };
 
 static struct rule {
@@ -28,7 +28,8 @@ static struct rule {
     {"!",     NOT},               /* logical not */
     {"\\(",   LEFT},              /* left paren */
     {"\\)",   RIGHT},             /* right paren */
-    {"\\$[a-zA-Z]+[0-9]*", REG}   /* register: $eax, $eip ... */
+    {"\\$[a-zA-Z]+[0-9]*", REG},  /* register: $eax, $eip ... */
+    {"[a-zA-Z_][a-zA-Z0-9_]*", VAR} /* variable */
 };
 
 #define NR_REGEX (sizeof(rules) / sizeof(rules[0]))
@@ -49,7 +50,6 @@ void init_regex() {
     }
 }
 
-
 typedef struct token {
     int type;
     char str[32];
@@ -57,6 +57,44 @@ typedef struct token {
 
 Token tokens[32];
 int nr_token;
+
+/* ------------ 变量表 ------------ */
+typedef struct {
+    char name[32];
+    uint32_t value;
+} Var;
+
+Var var_table[64];
+int var_count = 0;
+
+uint32_t get_var_value(const char *name, bool *success) {
+    int i;
+    for (i = 0; i < var_count; i++) {
+        if (strcmp(var_table[i].name, name) == 0) {
+            *success = true;
+            return var_table[i].value;
+        }
+    }
+    *success = false;
+    return 0;
+}
+
+void set_var_value(const char *name, uint32_t value) {
+    int i;
+    for (i = 0; i < var_count; i++) {
+        if (strcmp(var_table[i].name, name) == 0) {
+            var_table[i].value = value;
+            return;
+        }
+    }
+    if (var_count < 64) {
+        strncpy(var_table[var_count].name, name, sizeof(var_table[var_count].name) - 1);
+        var_table[var_count].name[sizeof(var_table[var_count].name) - 1] = '\0';
+        var_table[var_count].value = value;
+        var_count++;
+    }
+}
+/* ------------ 变量表 END ------------ */
 
 static bool make_token(char *e) {
     int position = 0;
@@ -118,7 +156,8 @@ static bool make_token(char *e) {
                     switch(rules[i].token_type) {
                         case NUM:
                         case HEX:
-                        case REG: {
+                        case REG:
+                        case VAR: {
                             tokens[nr_token].type = rules[i].token_type;
                             if (substr_len >= (int)sizeof(tokens[nr_token].str))
                                 substr_len = (int)sizeof(tokens[nr_token].str) - 1;
@@ -149,12 +188,14 @@ static bool make_token(char *e) {
 
     return true;
 }
+
 void debug_tokens() {
     int i;
     for (i = 0; i < nr_token; i++) {
         printf("token[%d]: type=%d, str=%s\n", i, tokens[i].type, tokens[i].str);
     }
 }
+
 static bool check_parentheses(int p, int q) {
     if (p > q) return false;
     if (tokens[p].type != LEFT || tokens[q].type != RIGHT) return false;
@@ -249,6 +290,9 @@ static uint32_t eval(int p, int q, bool *success) {
         } else if (tokens[p].type == REG) {
             uint32_t val = isa_reg_str2val(tokens[p].str + 1, success);
             return val;
+        } else if (tokens[p].type == VAR) {
+            uint32_t val = get_var_value(tokens[p].str, success);
+            return val;
         } else {
             *success = false;
             return 0;
@@ -312,7 +356,7 @@ uint32_t expr(char *e, bool *success) {
         return 0;
     }
     
-    //debug_tokens();
+    // debug_tokens();
 
     if (nr_token == 0) {
         *success = true;
