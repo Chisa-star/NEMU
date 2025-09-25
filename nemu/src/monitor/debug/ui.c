@@ -169,22 +169,44 @@ static int cmd_x(char *args)
 	return 0;
 }
 
+uint32_t get_reg_val(const char *s, bool *success) {
+	int i;
+	*success = true;
+	for(i = 0; i < 8; i ++) {
+		if(strcmp(regsl[i], s) == 0) {
+			return reg_l(i);
+		}
+	}
+
+	for(i = 0; i < 8; i ++) {
+		if(strcmp(regsw[i], s) == 0) {
+			return reg_w(i);
+		}
+	}
+
+	for(i = 0; i < 8; i ++) {
+		if(strcmp(regsb[i], s) == 0) {
+			return reg_b(i);
+		}
+	}
+
+	if(strcmp("eip", s) == 0) {
+		return cpu.eip;
+	}
+
+	*success = false;
+	return 0;
+}
+
 static int cmd_p(char *args) {
-    if (args == NULL) {
-        printf("Usage: p EXPRESSION\n");
-        return 0;
-    }
-    
-    bool success;
-    uint32_t result = expr(args, &success);
-    
-    if (success) {
-        printf("%u(0x%x)\n", result, result);
-    } else {
-        printf("Error evaluating expression: %s\n", args);
-    }
-    
-    return 0;
+	bool success;
+
+	if(args) {
+		uint32_t r = expr(args, &success);
+		if(success) { printf("0x%08x(%d)\n", r, r); }
+		else { printf("Bad expression\n"); }
+	}
+	return 0;
 }
 
 void ui_mainloop() {
