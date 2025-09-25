@@ -160,6 +160,15 @@ void debug_tokens() {
         printf("token[%d]: type=%d, str=%s\n", i, tokens[i].type, tokens[i].str);
     }
 }
+void debug_memory_access(uint32_t addr) {
+    printf("Memory at 0x%x: ", addr);
+    int i;
+    for ( i = 0; i < 16; i++) {
+        uint8_t byte = swaddr_read(addr + i, 1);
+        printf("%02x ", byte);
+    }
+    printf("\n");
+}
 
 static bool check_parentheses(int p, int q) {
     if (p > q) return false;
@@ -250,35 +259,37 @@ static uint32_t eval(int p, int q, bool *success) {
     }
 
     if (p == q) {
-        if (tokens[p].type == NUM) {
-            int val = atoi(tokens[p].str);
+    if (tokens[p].type == NUM) {
+        int val = atoi(tokens[p].str);
+        *success = true;
+        return (uint32_t)val;
+    } else if (tokens[p].type == HEX) {
+        char *str = tokens[p].str;
+        int is_negative = 0;
+        if (str[0] == '-') { is_negative = 1; str ++; }
+        {
+            uint32_t val = (uint32_t)strtoul(str, NULL, 16);
             *success = true;
-            return (uint32_t)val;
-        } else if (tokens[p].type == HEX) {
-            char *str = tokens[p].str;
-            int is_negative = 0;
-            if (str[0] == '-') { is_negative = 1; str ++; }
-            {
-                uint32_t val = (uint32_t)strtoul(str, NULL, 16);
-                *success = true;
-                return is_negative ? -val : val;
-            }
-        } else if (tokens[p].type == REG) {
-            uint32_t val = isa_reg_str2val(tokens[p].str + 1, success);
-            return val;
-        } else if (tokens[p].type == VARIABLE) {
-            uint32_t addr = lookup_variable(tokens[p].str, success);
-            if (*success) {
-                return addr;  // 返回变量地址
-            } else {
-                printf("Unknown variable: %s\n", tokens[p].str);
-                return 0;
-            }
+            return is_negative ? -val : val;
+        }
+    } else if (tokens[p].type == REG) {
+        uint32_t val = isa_reg_str2val(tokens[p].str + 1, success);
+        return val;
+    } else if (tokens[p].type == VARIABLE) {
+        uint32_t addr = lookup_variable(tokens[p].str, success);
+        if (*success) {
+            printf("Variable %s found at address: 0x%x\n", tokens[p].str, addr);
+            debug_memory_access(addr);  // 查看内存内容
+            return addr;
         } else {
-            *success = false;
+            printf("Unknown variable: %s\n", tokens[p].str);
             return 0;
         }
+    } else {
+        *success = false;
+        return 0;
     }
+}
 
     if (check_parentheses(p, q)) {
         return eval(p + 1, q - 1, success);
