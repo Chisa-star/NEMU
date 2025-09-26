@@ -301,7 +301,7 @@ static uint32_t eval(int p, int q, bool *success) {
                         Token* left_token = &tokens[op_pos-1];
                         if (left_token->type == VARIABLE || left_token->type == DEREF) {
                             *success = true; 
-                            return left + right * 4;
+                            return left + right;
                         }
                     }
                     *success = true; 
@@ -312,7 +312,7 @@ static uint32_t eval(int p, int q, bool *success) {
                         Token* left_token = &tokens[op_pos-1];
                         if (left_token->type == VARIABLE || left_token->type == DEREF) {
                             *success = true; 
-                            return left - right * 4;
+                            return left - right;
                         }
                     }
                     *success = true; 
