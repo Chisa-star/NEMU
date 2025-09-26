@@ -179,7 +179,7 @@ static int cmd_p(char *args) {
     uint32_t result = expr(args, &success);
     
     if (success) {
-        printf("0x%x\n", result);
+        printf("%x\n", result);
     } else {
         printf("Error evaluating expression: %s\n", args);
     }
