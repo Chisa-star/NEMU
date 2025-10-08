@@ -1,4 +1,5 @@
 #include "nemu.h"
+#include "memory/cache.h"  // 确保包含 cache.h 头文件
 
 #define ENTRY_START 0x100000
 
@@ -89,9 +90,15 @@ void restart() {
 
 	/* Initialize DRAM. */
 	init_ddr3();
+
+	/* Initialize cache - 将所有 valid bit 置为无效 */
+#ifdef CACHE_ENABLED
+	init_cache();
+#endif
+
+	/* Initialize CPU registers */
 	cpu.eax = cpu.ebx = cpu.ecx = cpu.edx = 0;
 	cpu.esi = cpu.edi = cpu.ebp = cpu.esp = 0;
 	cpu.eflags.val = 0x00000002; // bit 1 保留为 1
 	cpu.eip = ENTRY_START;
-
 }
